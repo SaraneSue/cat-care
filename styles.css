@@ -339,6 +339,17 @@ body {
   transform: scale(1);
 }
 
+.task .count {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--primary);
+  background: var(--mint-soft);
+  padding: 3px 9px;
+  border-radius: 999px;
+  margin-right: 2px;
+  flex: 0 0 auto;
+}
+
 .pop {
   animation: pop 0.25s ease;
 }

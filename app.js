@@ -17,51 +17,54 @@
   const CAT_KEYS = Object.keys(CATS);
 
   const TEMPLATES = [
-    ['加猫粮', 'food', 12, 'morning'],
-    ['换水', 'food', 24, 'morning'],
-    ['洗水碗', 'food', 48, 'evening'],
-    ['饮水机清洗', 'food', 168, 'evening'],
-    ['饮水机滤芯', 'food', 720, 'any'],
-    ['零食 / 保健品', 'food', 24, 'evening'],
-    ['换粮过渡', 'food', 24, 'morning'],
-    ['铲猫砂', 'litter', 12, 'morning'],
-    ['补猫砂', 'litter', 168, 'any'],
-    ['换猫砂 / 洗盆', 'litter', 336, 'any'],
-    ['排便排尿观察', 'litter', 24, 'evening'],
-    ['梳毛', 'groom', 72, 'evening'],
-    ['剪指甲', 'groom', 336, 'evening'],
-    ['刷牙', 'groom', 72, 'evening'],
-    ['洗耳', 'groom', 168, 'evening'],
-    ['眼部清洁', 'groom', 48, 'morning'],
-    ['下巴清洁', 'groom', 168, 'evening'],
-    ['洗澡', 'groom', 1440, 'any'],
-    ['剃脚毛', 'groom', 1440, 'any'],
-    ['猫三联（幼猫）', 'medical', 672, 'any', 'appointment'],
-    ['猫三联（加强）', 'medical', 8760, 'any', 'appointment'],
-    ['狂犬疫苗', 'medical', 8760, 'any', 'appointment'],
-    ['体内驱虫', 'medical', 2160, 'any'],
-    ['体外驱虫', 'medical', 720, 'any'],
-    ['年度体检', 'medical', 8760, 'any', 'appointment'],
-    ['洗牙', 'medical', 8760, 'any', 'appointment'],
-    ['心脏超声', 'medical', 8760, 'any', 'appointment'],
-    ['绝育', 'medical', 8760, 'any', 'appointment'],
-    ['用药 / 复诊', 'medical', 24, 'any'],
-    ['保险续费', 'medical', 8760, 'any'],
-    ['称体重', 'monitor', 720, 'any'],
-    ['饮水观察', 'monitor', 24, 'evening'],
-    ['尿团观察', 'monitor', 24, 'evening'],
-    ['猫窝清洗', 'env', 504, 'any'],
-    ['猫爬架清洁', 'env', 1440, 'any'],
-    ['玩具清洁', 'env', 720, 'any'],
-    ['全屋吸毛', 'env', 168, 'any'],
-    ['猫包清洁', 'env', 720, 'any'],
-    ['陪玩', 'env', 24, 'evening'],
-  ].map(([name, category, hours, slot, type]) => ({
+    ['加猫粮', 'food', { d: 2 }, 'morning'],
+    ['换水', 'food', { d: 1 }, 'morning'],
+    ['洗水碗', 'food', { n: 2, u: 'day' }, 'evening'],
+    ['饮水机清洗', 'food', { n: 1, u: 'week' }, 'evening'],
+    ['饮水机滤芯', 'food', { n: 1, u: 'month' }, 'any'],
+    ['零食 / 保健品', 'food', { d: 1 }, 'evening'],
+    ['换粮过渡', 'food', { d: 1 }, 'morning'],
+    ['铲猫砂', 'litter', { d: 2 }, 'morning'],
+    ['补猫砂', 'litter', { n: 1, u: 'week' }, 'any'],
+    ['换猫砂 / 洗盆', 'litter', { n: 2, u: 'week' }, 'any'],
+    ['排便排尿观察', 'litter', { d: 1 }, 'evening'],
+    ['梳毛', 'groom', { n: 3, u: 'day' }, 'evening'],
+    ['剪指甲', 'groom', { n: 2, u: 'week' }, 'evening'],
+    ['刷牙', 'groom', { n: 3, u: 'day' }, 'evening'],
+    ['洗耳', 'groom', { n: 1, u: 'week' }, 'evening'],
+    ['眼部清洁', 'groom', { n: 2, u: 'day' }, 'morning'],
+    ['下巴清洁', 'groom', { n: 1, u: 'week' }, 'evening'],
+    ['洗澡', 'groom', { n: 2, u: 'month' }, 'any'],
+    ['剃脚毛', 'groom', { n: 2, u: 'month' }, 'any'],
+    ['猫三联（幼猫）', 'medical', { n: 28, u: 'day' }, 'any', 'appointment'],
+    ['猫三联（加强）', 'medical', { n: 1, u: 'year' }, 'any', 'appointment'],
+    ['狂犬疫苗', 'medical', { n: 1, u: 'year' }, 'any', 'appointment'],
+    ['体内驱虫', 'medical', { n: 3, u: 'month' }, 'any'],
+    ['体外驱虫', 'medical', { n: 1, u: 'month' }, 'any'],
+    ['年度体检', 'medical', { n: 1, u: 'year' }, 'any', 'appointment'],
+    ['洗牙', 'medical', { n: 1, u: 'year' }, 'any', 'appointment'],
+    ['心脏超声', 'medical', { n: 1, u: 'year' }, 'any', 'appointment'],
+    ['绝育', 'medical', { n: 1, u: 'year' }, 'any', 'appointment'],
+    ['用药 / 复诊', 'medical', { d: 1 }, 'any'],
+    ['保险续费', 'medical', { n: 1, u: 'year' }, 'any'],
+    ['称体重', 'monitor', { n: 1, u: 'month' }, 'any'],
+    ['饮水观察', 'monitor', { d: 1 }, 'evening'],
+    ['尿团观察', 'monitor', { d: 1 }, 'evening'],
+    ['猫窝清洗', 'env', { n: 3, u: 'week' }, 'any'],
+    ['猫爬架清洁', 'env', { n: 2, u: 'month' }, 'any'],
+    ['玩具清洁', 'env', { n: 1, u: 'month' }, 'any'],
+    ['全屋吸毛', 'env', { n: 1, u: 'week' }, 'any'],
+    ['猫包清洁', 'env', { n: 1, u: 'month' }, 'any'],
+    ['陪玩', 'env', { d: 1 }, 'evening'],
+  ].map(([name, category, freq, slot, type]) => ({
     name,
     category,
-    hours,
     slot,
     type: type || 'interval',
+    freqKind: freq.d ? 'daily' : 'interval',
+    timesPerDay: freq.d || 1,
+    every: freq.n || 1,
+    unit: freq.u || 'day',
   }));
 
   /* ---------------- 图标 ---------------- */
@@ -94,6 +97,7 @@
   }
 
   /* ---------------- 状态 ---------------- */
+  let needsSave = false;
   let data = load();
   let tab = 'today';
   let planFilter = 'all';
@@ -120,6 +124,10 @@
       d.tasks = d.tasks || [];
       d.records = d.records || [];
       d.settings = d.settings || { backupAt: null };
+      if (d.tasks.some((t) => !t.freqKind)) {
+        needsSave = true;
+        d.tasks = d.tasks.map(L.migrateTask);
+      }
       return d;
     } catch (e) {
       console.warn('读取数据失败，使用空数据', e);
@@ -218,32 +226,36 @@
   }
 
   /* ---------------- 渲染：今天 ---------------- */
-  function taskMeta(t) {
+  function taskMeta(t, records) {
     if (t.type === 'appointment') {
       if (t.appointmentAt) {
         return `预约 ${L.formatDate(t.appointmentAt)}${t.hospital ? ' · ' + t.hospital : ''}`;
       }
-      return `该预约了 · ${L.intervalLabel(t.intervalHours)}`;
+      return `该预约了 · ${L.scheduleLabel(t)}`;
     }
-    return `${L.intervalLabel(t.intervalHours)} · ${L.slotName(t.slot)}`;
+    return `${L.scheduleLabel(t)} · ${L.slotName(t.slot)}`;
   }
 
-  function taskRow(t, cls) {
+  function taskRow(t, cls, records) {
     const c = CATS[t.category] || CATS.food;
+    const daily = t.freqKind === 'daily';
+    const need = Math.max(1, t.timesPerDay || 1);
+    const done = daily ? L.doneCountOn(t, records, new Date()) : 0;
     return `
       <div class="task ${cls}" data-act="openTask" data-id="${t.id}">
         <span class="cat-icon" style="background:${c.bg};color:${c.fg}">${icon(c.icon)}</span>
         <div class="task-main">
           <div class="task-name">${esc(t.name)}</div>
-          <div class="task-meta">${esc(taskMeta(t))}</div>
+          <div class="task-meta">${esc(taskMeta(t, records))}</div>
         </div>
+        ${daily && need > 1 ? `<span class="count">${done}/${need}</span>` : ''}
         <button class="check ${cls === 'done' ? 'on' : ''}" data-act="complete" data-id="${t.id}" aria-label="完成">${icon('check')}</button>
       </div>`;
   }
 
   function todayHTML() {
     const now = new Date();
-    const b = L.bucketTasks(catTasks(), now);
+    const b = L.bucketTasks(catTasks(), data.records, now);
     const total = b.overdue.length + b.today.length + b.done.length;
     const pct = total ? Math.round((b.done.length / total) * 100) : 0;
     const dateStr = `${now.getMonth() + 1} 月 ${now.getDate()} 日`;
@@ -264,7 +276,7 @@
           <span class="count">${doneOpen ? '收起' : '展开'}</span>
         </div>
         <div class="${doneOpen ? '' : 'hidden'}">
-          ${b.done.map((t) => taskRow(t, 'done')).join('')}
+          ${b.done.map((t) => taskRow(t, 'done', data.records)).join('')}
         </div>`
       : '';
 
@@ -279,13 +291,13 @@
       ${
         b.overdue.length
           ? `<div class="section-title danger">已逾期 · ${b.overdue.length}</div>
-             ${b.overdue.map((t) => taskRow(t, 'overdue')).join('')}`
+             ${b.overdue.map((t) => taskRow(t, 'overdue', data.records)).join('')}`
           : ''
       }
       ${
         b.today.length
           ? `<div class="section-title">今天 · ${b.today.length}</div>
-             ${b.today.map((t) => taskRow(t, '')).join('')}`
+             ${b.today.map((t) => taskRow(t, '', data.records)).join('')}`
           : ''
       }
       ${doneBlock}
@@ -322,7 +334,7 @@
           <span class="cat-icon" style="background:${c.bg};color:${c.fg};width:36px;height:36px;border-radius:12px">${icon(c.icon)}</span>
           <div class="plan-main">
             <div class="plan-name">${esc(t.name)}${off ? ' · 已停用' : ''}</div>
-            <div class="plan-meta">${L.intervalLabel(t.intervalHours)} · ${last}</div>
+            <div class="plan-meta">${L.scheduleLabel(t)} · ${last}</div>
           </div>
           ${icon('chev', 'chev')}
         </div>`;
@@ -525,29 +537,52 @@
   function taskSheet(id) {
     const cat = activeCat();
     const task =
-      data.tasks.find((t) => t.id === id) ||
-      ({
+      data.tasks.find((t) => t.id === id) || {
         id: null,
         catId: cat.id,
         name: '',
         category: 'food',
         type: 'interval',
-        intervalHours: 24,
+        freqKind: 'daily',
+        timesPerDay: 1,
+        every: 3,
+        unit: 'day',
         slot: 'any',
         nextDueAt: new Date().toISOString(),
         lastDoneAt: null,
         appointmentAt: null,
         hospital: '',
         enabled: true,
-      });
-
+      };
     const isNew = !task.id;
+    const isDaily = task.freqKind !== 'interval';
     const catRows = CAT_KEYS.map(
       (k) =>
         `<option value="${k}" ${task.category === k ? 'selected' : ''}>${CATS[k].name}</option>`
     ).join('');
-
-    const presets = [12, 24, 48, 72, 168, 336, 720, 8760];
+    const unitBtn = (u, label) =>
+      `<button type="button" class="${task.unit === u ? 'on' : ''}" data-unit="${u}">${label}</button>`;
+    const timePresets = [1, 2, 3, 4]
+      .map(
+        (n) =>
+          `<button type="button" class="preset ${task.timesPerDay === n ? 'on' : ''}" data-times="${n}">${n} 次</button>`
+      )
+      .join('');
+    const everyPresets = [
+      [1, 'day', '每天'],
+      [2, 'day', '每 2 天'],
+      [3, 'day', '每 3 天'],
+      [1, 'week', '每周'],
+      [2, 'week', '每 2 周'],
+      [1, 'month', '每月'],
+      [3, 'month', '每 3 月'],
+      [1, 'year', '每年'],
+    ]
+      .map(
+        ([n, u, label]) =>
+          `<button type="button" class="preset ${task.every === n && task.unit === u ? 'on' : ''}" data-every="${n}" data-every-unit="${u}">${label}</button>`
+      )
+      .join('');
 
     openSheet(`
       ${sheetHead(isNew ? '新建照料项' : esc(task.name || '任务'))}
@@ -555,14 +590,21 @@
         isNew
           ? ''
           : `<div class="btn-row">
-              <button class="btn" data-act="complete" data-id="${task.id}">完成打卡</button>
-              <button class="btn btn-ghost" data-act="skip" data-id="${task.id}">跳过</button>
-              <button class="btn btn-ghost" data-act="snooze" data-id="${task.id}">推迟 1 小时</button>
+              <button class="btn" data-act="complete" data-id="${task.id}">${isDaily ? '记录一次' : '完成打卡'}</button>
+              ${
+                isDaily
+                  ? ''
+                  : `<button class="btn btn-ghost" data-act="skip" data-id="${task.id}">跳过</button>
+                     <button class="btn btn-ghost" data-act="snooze" data-id="${task.id}">推迟</button>`
+              }
             </div>`
       }
       <form id="taskForm">
         <input type="hidden" name="taskId" value="${task.id || ''}" />
         <input type="hidden" name="type" value="${task.type}" />
+        <input type="hidden" name="freqKind" value="${isDaily ? 'daily' : 'interval'}" />
+        <input type="hidden" name="unit" value="${task.unit}" />
+
         <div class="field">
           <label class="label">名称</label>
           <input class="input" name="name" required value="${esc(task.name)}" placeholder="比如：加猫粮" />
@@ -578,34 +620,55 @@
             <button type="button" class="${task.type === 'appointment' ? 'on' : ''}" data-seg="appointment">预约任务</button>
           </div>
         </div>
+
         <div class="field">
-          <label class="label">间隔（小时）</label>
-          <input class="input" type="number" name="interval" min="1" max="8760" value="${task.intervalHours}" />
-          <div class="presets">
-            ${presets.map((h) => `<button type="button" class="preset ${task.intervalHours === h ? 'on' : ''}" data-preset="${h}">${h >= 24 ? h / 24 + ' 天' : h + ' 小时'}</button>`).join('')}
+          <label class="label">频率</label>
+          <div class="seg" id="freqSeg">
+            <button type="button" class="${isDaily ? 'on' : ''}" data-freq="daily">每天</button>
+            <button type="button" class="${isDaily ? '' : 'on'}" data-freq="interval">按间隔</button>
           </div>
         </div>
+
+        <div class="field ${isDaily ? '' : 'hidden'}" id="dailyBlock">
+          <label class="label">每天几次</label>
+          <input class="input" type="number" name="times" min="1" max="20" value="${task.timesPerDay || 1}" />
+          <div class="presets">${timePresets}</div>
+        </div>
+
+        <div class="field ${isDaily ? 'hidden' : ''}" id="intervalBlock">
+          <label class="label">间隔</label>
+          <input class="input" type="number" name="every" min="1" max="365" value="${task.every || 1}" />
+          <div class="seg" id="unitSeg" style="margin-top:10px">
+            ${unitBtn('day', '天')}${unitBtn('week', '周')}${unitBtn('month', '月')}${unitBtn('year', '年')}
+          </div>
+          <div class="presets">${everyPresets}</div>
+        </div>
+
         <div class="field">
           <label class="label">时段</label>
           <div class="seg" id="slotSeg">
             ${['morning', 'evening', 'any']
               .map(
-                (s) =>
-                  `<button type="button" class="${task.slot === s ? 'on' : ''}" data-slot="${s}">${L.slotName(s)}</button>`
+                (sl) =>
+                  `<button type="button" class="${task.slot === sl ? 'on' : ''}" data-slot="${sl}">${L.slotName(sl)}</button>`
               )
               .join('')}
           </div>
         </div>
+
         <div class="field">
-          <label class="label">下次到期</label>
-          <input class="input" type="datetime-local" name="nextDue" value="${toLocalInput(task.nextDueAt)}" />
+          <label class="label">上次照料（留空表示还没做过）</label>
+          <input class="input" type="datetime-local" name="lastDone" value="${task.lastDoneAt ? toLocalInput(task.lastDoneAt) : ''}" />
+          <div class="hint-block" style="padding-top:6px">填了上次时间，会按频率自动算下次；留空则从现在开始算。</div>
         </div>
+
         <div class="field ${task.type === 'appointment' ? '' : 'hidden'}" id="apptFields">
-          <label class="label">预约时间（可选，填了就按这个日期显示）</label>
+          <label class="label">预约时间（可选）</label>
           <input class="input" type="datetime-local" name="appointmentAt" value="${task.appointmentAt ? toLocalInput(task.appointmentAt) : ''}" />
           <div style="height:10px"></div>
           <input class="input" name="hospital" value="${esc(task.hospital || '')}" placeholder="医院名称（可选）" />
         </div>
+
         ${
           isNew
             ? ''
@@ -617,6 +680,7 @@
                 </div>
               </div>`
         }
+
         <button class="btn" type="submit">保存</button>
         ${isNew ? '' : `<button class="btn btn-danger" type="button" data-act="deleteTask" data-id="${task.id}">删除这个任务</button>`}
       </form>
@@ -624,7 +688,11 @@
 
     const form = $('taskForm');
     const typeHidden = form.querySelector('[name="type"]');
+    const freqHidden = form.querySelector('[name="freqKind"]');
+    const unitHidden = form.querySelector('[name="unit"]');
     const apptFields = $('apptFields');
+    const dailyBlock = $('dailyBlock');
+    const intervalBlock = $('intervalBlock');
     const enableHidden = { value: String(task.enabled ? 1 : 0) };
 
     $('typeSeg').addEventListener('click', (e) => {
@@ -635,18 +703,46 @@
       apptFields.classList.toggle('hidden', b.dataset.seg !== 'appointment');
     });
 
+    $('freqSeg').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-freq]');
+      if (!b) return;
+      const daily = b.dataset.freq === 'daily';
+      freqHidden.value = daily ? 'daily' : 'interval';
+      [...$('freqSeg').children].forEach((x) => x.classList.toggle('on', x === b));
+      dailyBlock.classList.toggle('hidden', !daily);
+      intervalBlock.classList.toggle('hidden', daily);
+    });
+
+    $('unitSeg').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-unit]');
+      if (!b) return;
+      unitHidden.value = b.dataset.unit;
+      [...$('unitSeg').children].forEach((x) => x.classList.toggle('on', x === b));
+    });
+
+    form.querySelectorAll('[data-times]').forEach((b) =>
+      b.addEventListener('click', () => {
+        form.querySelector('[name="times"]').value = b.dataset.times;
+        form.querySelectorAll('[data-times]').forEach((x) => x.classList.toggle('on', x === b));
+      })
+    );
+
+    form.querySelectorAll('[data-every]').forEach((b) =>
+      b.addEventListener('click', () => {
+        form.querySelector('[name="every"]').value = b.dataset.every;
+        unitHidden.value = b.dataset.everyUnit;
+        [...$('unitSeg').children].forEach((x) =>
+          x.classList.toggle('on', x.dataset.unit === b.dataset.everyUnit)
+        );
+        form.querySelectorAll('[data-every]').forEach((x) => x.classList.toggle('on', x === b));
+      })
+    );
+
     $('slotSeg').addEventListener('click', (e) => {
       const b = e.target.closest('[data-slot]');
       if (!b) return;
       [...$('slotSeg').children].forEach((x) => x.classList.toggle('on', x === b));
     });
-
-    form.querySelectorAll('[data-preset]').forEach((b) =>
-      b.addEventListener('click', () => {
-        form.querySelector('[name="interval"]').value = b.dataset.preset;
-        form.querySelectorAll('[data-preset]').forEach((x) => x.classList.toggle('on', x === b));
-      })
-    );
 
     const enableSeg = $('enableSeg');
     if (enableSeg) {
@@ -663,24 +759,43 @@
       const fd = new FormData(form);
       const name = String(fd.get('name') || '').trim();
       if (!name) return toast('给任务起个名字');
-      const interval = Math.max(1, Math.min(8760, parseInt(fd.get('interval'), 10) || 24));
+
+      const freqKind = freqHidden.value;
+      const unit = unitHidden.value || 'day';
+      const timesPerDay = Math.max(1, Math.min(20, parseInt(fd.get('times'), 10) || 1));
+      const every = Math.max(1, Math.min(365, parseInt(fd.get('every'), 10) || 1));
       const slotBtn = $('slotSeg').querySelector('.on');
       const slot = slotBtn ? slotBtn.dataset.slot : 'any';
-      const nextDue = fd.get('nextDue') ? new Date(fd.get('nextDue')) : new Date();
+      const lastRaw = fd.get('lastDone');
+      const last = lastRaw ? new Date(lastRaw) : null;
       const type = typeHidden.value;
-      const appointmentAt = fd.get('appointmentAt') ? new Date(fd.get('appointmentAt')) : null;
+      const appointmentRaw = fd.get('appointmentAt');
+      const appointmentAt = appointmentRaw ? new Date(appointmentRaw) : null;
+      const now = new Date();
 
       const payload = {
         name,
         category: fd.get('category'),
         type,
-        intervalHours: interval,
+        freqKind,
+        timesPerDay,
+        every,
+        unit,
         slot,
-        nextDueAt: nextDue.toISOString(),
-        appointmentAt: type === 'appointment' ? appointmentAt && appointmentAt.toISOString() : null,
+        lastDoneAt: last ? last.toISOString() : null,
+        appointmentAt:
+          type === 'appointment' && appointmentAt ? appointmentAt.toISOString() : null,
         hospital: String(fd.get('hospital') || '').trim(),
         enabled: enableHidden.value === '1',
       };
+
+      if (freqKind === 'daily') {
+        payload.nextDueAt = L.endOfDay(now).toISOString();
+      } else if (last) {
+        payload.nextDueAt = L.nextDueFor(payload, last).toISOString();
+      } else {
+        payload.nextDueAt = now.toISOString();
+      }
 
       const existingId = fd.get('taskId');
       if (existingId) {
@@ -690,10 +805,9 @@
         data.tasks.push({
           id: L.uid(),
           catId: cat.id,
-          lastDoneAt: null,
           doneCount: 0,
           note: '',
-          createdAt: new Date().toISOString(),
+          createdAt: now.toISOString(),
           ...payload,
         });
       }
@@ -721,7 +835,7 @@
               <span class="cat-icon" style="background:${CATS[g.key].bg};color:${CATS[g.key].fg};width:36px;height:36px;border-radius:12px">${icon(CATS[g.key].icon)}</span>
               <div class="plan-main">
                 <div class="plan-name">${esc(t.name)}</div>
-                <div class="plan-meta">${L.intervalLabel(t.hours)} · ${L.slotName(t.slot)}</div>
+                <div class="plan-meta">${L.scheduleLabel(t)} · ${L.slotName(t.slot)}</div>
               </div>
               ${added ? '<span class="hint">已添加</span>' : icon('plus')}
             </div>`;
@@ -799,21 +913,26 @@
   function addTemplate(name) {
     const tpl = TEMPLATES.find((t) => t.name === name);
     if (!tpl) return;
+    const now = new Date();
     data.tasks.push({
       id: L.uid(),
       catId: activeCat().id,
       name: tpl.name,
       category: tpl.category,
       type: tpl.type,
-      intervalHours: tpl.hours,
+      freqKind: tpl.freqKind,
+      timesPerDay: tpl.timesPerDay,
+      every: tpl.every,
+      unit: tpl.unit,
       slot: tpl.slot,
-      nextDueAt: new Date().toISOString(),
+      nextDueAt:
+        tpl.freqKind === 'daily' ? L.endOfDay(now).toISOString() : now.toISOString(),
       lastDoneAt: null,
       appointmentAt: null,
       hospital: '',
       enabled: true,
       doneCount: 0,
-      createdAt: new Date().toISOString(),
+      createdAt: now.toISOString(),
     });
     save();
     render();
@@ -1016,7 +1135,7 @@
       return d.toISOString();
     };
     const catId = 'cat_demo';
-    const mk = (name, category, hours, slot, dueOffset, dueH, dueM, extra) =>
+    const mk = (name, category, freq, slot, extra) =>
       Object.assign(
         {
           id: 't_' + name,
@@ -1024,9 +1143,12 @@
           name,
           category,
           type: 'interval',
-          intervalHours: hours,
+          freqKind: freq.d ? 'daily' : 'interval',
+          timesPerDay: freq.d || 1,
+          every: freq.n || 1,
+          unit: freq.u || 'day',
           slot,
-          nextDueAt: at(dueOffset, dueH, dueM),
+          nextDueAt: at(0, 23, 59),
           lastDoneAt: null,
           appointmentAt: null,
           hospital: '',
@@ -1038,21 +1160,37 @@
       );
 
     const tasks = [
-      mk('加猫粮', 'food', 12, 'morning', 0, 20, 0, { lastDoneAt: at(0, 8, 10) }),
-      mk('换水', 'food', 24, 'morning', 1, 8, 0, { lastDoneAt: at(0, 8, 12) }),
-      mk('铲猫砂', 'litter', 12, 'evening', 0, 9, 0),
-      mk('陪玩', 'env', 24, 'evening', 0, 20, 30),
-      mk('体外驱虫', 'medical', 720, 'any', -2, 10, 0),
-      mk('年度体检', 'medical', 8760, 'any', 0, 9, 0, { type: 'appointment' }),
-      mk('刷牙', 'groom', 72, 'evening', 2, 21, 0),
-      mk('剪指甲', 'groom', 336, 'evening', 5, 20, 0),
-      mk('称体重', 'monitor', 720, 'any', 20, 10, 0),
+      mk('加猫粮', 'food', { d: 2 }, 'morning', { lastDoneAt: at(0, 8, 10) }),
+      mk('换水', 'food', { d: 1 }, 'morning', { lastDoneAt: at(0, 8, 12) }),
+      mk('铲猫砂', 'litter', { d: 2 }, 'evening'),
+      mk('陪玩', 'env', { d: 1 }, 'evening'),
+      mk('体外驱虫', 'medical', { n: 1, u: 'month' }, 'any', {
+        nextDueAt: at(-2, 10, 0),
+        lastDoneAt: at(-32, 10, 0),
+      }),
+      mk('年度体检', 'medical', { n: 1, u: 'year' }, 'any', {
+        type: 'appointment',
+        nextDueAt: at(0, 9, 0),
+        lastDoneAt: at(-365, 9, 0),
+      }),
+      mk('刷牙', 'groom', { n: 3, u: 'day' }, 'evening', {
+        nextDueAt: at(2, 21, 0),
+        lastDoneAt: at(-1, 21, 0),
+      }),
+      mk('剪指甲', 'groom', { n: 2, u: 'week' }, 'evening', {
+        nextDueAt: at(5, 20, 0),
+        lastDoneAt: at(-9, 20, 0),
+      }),
+      mk('称体重', 'monitor', { n: 1, u: 'month' }, 'any', {
+        nextDueAt: at(20, 10, 0),
+        lastDoneAt: at(-10, 10, 0),
+      }),
     ];
     const records = [
       { id: 'r1', taskId: 't_加猫粮', catId, at: at(0, 8, 10), status: 'done', name: '加猫粮' },
       { id: 'r2', taskId: 't_换水', catId, at: at(0, 8, 12), status: 'done', name: '换水' },
       { id: 'r3', taskId: 't_铲猫砂', catId, at: at(-1, 21, 0), status: 'done', name: '铲猫砂' },
-      { id: 'r4', taskId: 't_刷牙', catId, at: at(-2, 21, 5), status: 'done', name: '刷牙' },
+      { id: 'r4', taskId: 't_刷牙', catId, at: at(-1, 21, 5), status: 'done', name: '刷牙' },
       { id: 'r5', taskId: 't_陪玩', catId, at: at(-1, 20, 30), status: 'skipped', name: '陪玩' },
     ];
     return {
@@ -1076,6 +1214,8 @@
   }
   if (!data.activeCat && data.cats.length) data.activeCat = data.cats[0].id;
   render();
+  if (needsSave) save();
+
 
 
 
