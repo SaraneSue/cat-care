@@ -509,7 +509,7 @@
           <label class="label">体重（kg）</label>
           <input class="input" type="number" step="0.1" min="0" name="weight" value="${cat && cat.weight ? cat.weight : ''}" placeholder="4.8" />
         </div>
-        ${cat ? `<input type="hidden" name="id" value="${cat.id}" />` : ''}
+        ${cat ? `<input type="hidden" name="catId" value="${cat.id}" />` : ''}
         <button class="btn" type="submit">保存</button>
         ${cat ? `<button class="btn btn-danger" type="button" data-act="deleteCat" data-id="${cat.id}">删除这只猫</button>` : ''}
       </form>
@@ -561,7 +561,7 @@
             </div>`
       }
       <form id="taskForm">
-        <input type="hidden" name="id" value="${task.id || ''}" />
+        <input type="hidden" name="taskId" value="${task.id || ''}" />
         <input type="hidden" name="type" value="${task.type}" />
         <div class="field">
           <label class="label">名称</label>
@@ -682,7 +682,7 @@
         enabled: enableHidden.value === '1',
       };
 
-      const existingId = fd.get('id');
+      const existingId = fd.get('taskId');
       if (existingId) {
         const idx = data.tasks.findIndex((t) => t.id === existingId);
         data.tasks[idx] = { ...data.tasks[idx], ...payload };
@@ -959,8 +959,9 @@
 
   document.addEventListener('submit', (e) => {
     const f = e.target;
+    const formId = f.getAttribute('id');
 
-    if (f.id === 'onboardForm') {
+    if (formId === 'onboardForm') {
       e.preventDefault();
       const name = String(new FormData(f).get('name') || '').trim();
       if (!name) return toast('给猫起个名字');
@@ -972,7 +973,7 @@
       return;
     }
 
-    if (f.id === 'catForm') {
+    if (formId === 'catForm') {
       e.preventDefault();
       const fd = new FormData(f);
       const name = String(fd.get('name') || '').trim();
@@ -983,7 +984,7 @@
         birthday: String(fd.get('birthday') || ''),
         weight: String(fd.get('weight') || ''),
       };
-      const cid = fd.get('id');
+      const cid = fd.get('catId');
       if (cid) {
         const c = data.cats.find((x) => x.id === cid);
         Object.assign(c, payload);
@@ -1075,6 +1076,8 @@
   }
   if (!data.activeCat && data.cats.length) data.activeCat = data.cats[0].id;
   render();
+
+
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {

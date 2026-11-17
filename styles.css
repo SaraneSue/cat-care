@@ -406,6 +406,13 @@ body {
   opacity: 0.55;
 }
 
+.plan-row > svg:not(.chev) {
+  width: 20px;
+  height: 20px;
+  color: var(--mute);
+  flex: 0 0 auto;
+}
+
 .plan-main {
   flex: 1;
   min-width: 0;
