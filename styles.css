@@ -1128,3 +1128,74 @@ body {
   padding: 6px 0;
   cursor: pointer;
 }
+
+/* ---------- plan manage ---------- */
+.plan-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 6px 10px;
+}
+.plan-hint {
+  font-size: 12.5px;
+  color: var(--mute);
+}
+.plan-row.picked {
+  outline: 2px solid var(--primary);
+  background: #f4fbf7;
+}
+.pick {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid #e2d2c4;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+}
+.pick.on {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+.pick svg {
+  width: 13px;
+  height: 13px;
+  color: #fff;
+}
+.manage-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(78px + env(safe-area-inset-bottom));
+  display: flex;
+  gap: 10px;
+  padding: 10px 18px;
+  background: rgba(255, 250, 232, 0.96);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--line);
+  z-index: 25;
+}
+.mb-btn {
+  flex: 1;
+  border: 0;
+  border-radius: 999px;
+  padding: 12px 8px;
+  font: inherit;
+  font-size: 14px;
+  background: #fff;
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+}
+.mb-btn.strong {
+  background: var(--primary);
+  color: #fff;
+}
+.mb-btn.strong:disabled {
+  opacity: 0.45;
+}
+.mb-btn.danger {
+  background: transparent;
+  color: var(--danger);
+  box-shadow: none;
+}

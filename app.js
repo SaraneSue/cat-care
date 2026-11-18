@@ -102,6 +102,8 @@
   let data = load();
   let tab = 'today';
   let planFilter = 'all';
+  let planManage = false;
+  const selectedTasks = new Set();
   let doneOpen = false;
   let toastTimer = null;
 
@@ -227,6 +229,10 @@
 
   function renderView() {
     const v = $('view');
+    const scrollTop = v.scrollTop;
+    const finish = () => {
+      if (scrollTop) v.scrollTop = scrollTop;
+    };
     if (!data.cats.length) {
       v.innerHTML = onboardingHTML();
       return;
@@ -235,6 +241,7 @@
     else if (tab === 'plan') v.innerHTML = planHTML();
     else if (tab === 'records') v.innerHTML = recordsHTML();
     else v.innerHTML = meHTML();
+    finish();
   }
 
   /* ---------------- 渲染：今天 ---------------- */
@@ -341,20 +348,29 @@
     const rowHTML = (t, off) => {
       const c = CATS[t.category] || CATS.food;
       const last = t.lastDoneAt ? `上次 ${L.formatDay(t.lastDoneAt)}` : '从未记录';
+      const picked = selectedTasks.has(t.id);
       return `
-        <div class="plan-row ${off ? 'off' : ''}" data-act="taskEdit" data-id="${t.id}">
+        <div class="plan-row ${off ? 'off' : ''} ${picked ? 'picked' : ''}" data-act="${planManage ? 'toggleSelect' : 'taskEdit'}" data-id="${t.id}">
+          ${planManage ? `<span class="pick ${picked ? 'on' : ''}">${picked ? icon('check') : ''}</span>` : ''}
           <span class="cat-icon" style="background:${c.bg};color:${c.fg};width:36px;height:36px;border-radius:12px">${icon(c.icon)}</span>
           <div class="plan-main">
             <div class="plan-name">${esc(t.name)}${off ? ' · 已停用' : ''}</div>
             <div class="plan-meta">${L.scheduleLabel(t)} · ${last}</div>
           </div>
-          ${icon('chev', 'chev')}
+          ${planManage ? '' : icon('chev', 'chev')}
         </div>`;
     };
 
     return `
       <div class="chips">${chips}</div>
-      <div class="hint-block" style="padding:0 6px 10px">点任务修改计划 · 右下角 ＋ 添加照料项</div>
+      ${
+        groups.length
+          ? `<div class="plan-tools">
+              <span class="plan-hint">${planManage ? `已选 ${selectedTasks.size} 项` : '点任务修改计划 · 右下角 ＋ 添加照料项'}</span>
+              <button class="link-btn" data-act="toggleManage">${planManage ? '完成' : '管理'}</button>
+            </div>`
+          : ''
+      }
       ${groups
         .map(
           (g) => `
@@ -370,7 +386,16 @@
           ? ''
           : `<div class="empty">${icon('cat')}<div class="empty-title">还没有照料项</div><div class="empty-sub">点右下角的 ＋ 从模板里挑</div></div>`
       }
-      <button class="fab" data-act="addTask" aria-label="添加照料项">${icon('plus')}</button>
+      ${planManage ? '<div style="height:80px"></div>' : ''}
+      ${
+        planManage
+          ? `<div class="manage-bar">
+              <button class="mb-btn" data-act="selectAll">${selectedTasks.size === catTasks().length ? '取消全选' : '全选'}</button>
+              <button class="mb-btn strong" data-act="deleteSelected" ${selectedTasks.size ? '' : 'disabled'}>删除所选${selectedTasks.size ? ` (${selectedTasks.size})` : ''}</button>
+              <button class="mb-btn danger" data-act="clearAll">清空全部</button>
+            </div>`
+          : `<button class="fab" data-act="addTask" aria-label="添加照料项">${icon('plus')}</button>`
+      }
     `;
   }
 
@@ -1184,7 +1209,10 @@
 
     if (act === 'tab') {
       tab = el.dataset.tab;
+      planManage = false;
+      selectedTasks.clear();
       render();
+      $('view').scrollTop = 0;
       return;
     }
     if (act === 'catMenu') return catMenuSheet();
@@ -1235,6 +1263,53 @@
         closeSheet();
         render();
         toast('已删除');
+      });
+    }
+    if (act === 'toggleManage') {
+      planManage = !planManage;
+      selectedTasks.clear();
+      render();
+      return;
+    }
+    if (act === 'toggleSelect') {
+      if (selectedTasks.has(id)) selectedTasks.delete(id);
+      else selectedTasks.add(id);
+      render();
+      return;
+    }
+    if (act === 'selectAll') {
+      const list = catTasks();
+      if (selectedTasks.size === list.length) selectedTasks.clear();
+      else list.forEach((t) => selectedTasks.add(t.id));
+      render();
+      return;
+    }
+    if (act === 'deleteSelected') {
+      const ids = [...selectedTasks];
+      if (!ids.length) return;
+      return confirmSheet(`删除选中的 ${ids.length} 个任务？相关记录也会一起删掉。`, () => {
+        const set = new Set(ids);
+        data.tasks = data.tasks.filter((t) => !set.has(t.id));
+        data.records = data.records.filter((r) => !set.has(r.taskId));
+        selectedTasks.clear();
+        planManage = false;
+        save();
+        render();
+        toast('已删除 ' + ids.length + ' 项');
+      });
+    }
+    if (act === 'clearAll') {
+      const list = catTasks();
+      if (!list.length) return;
+      return confirmSheet(`清空「${esc(activeCat().name)}」的全部 ${list.length} 个计划？记录也会一起删掉。`, () => {
+        const set = new Set(list.map((t) => t.id));
+        data.tasks = data.tasks.filter((t) => !set.has(t.id));
+        data.records = data.records.filter((r) => !set.has(r.taskId));
+        selectedTasks.clear();
+        planManage = false;
+        save();
+        render();
+        toast('已清空计划');
       });
     }
     if (act === 'filter') {
@@ -1421,6 +1496,7 @@
   if (!data.activeCat && data.cats.length) data.activeCat = data.cats[0].id;
   render();
   if (needsSave) save();
+
 
 
 
