@@ -1282,9 +1282,3 @@ body {
   color: var(--text);
   letter-spacing: 0.5px;
 }
-.minichart {
-  width: 66px;
-  height: 26px;
-  flex: 0 0 auto;
-  margin-right: 2px;
-}

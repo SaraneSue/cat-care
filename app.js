@@ -103,6 +103,7 @@
   let tab = 'today';
   let planFilter = 'all';
   let planScope = 'all';
+  let weightRange = 'all';
   let tplScope = 'family';
   let planManage = false;
   const selectedTasks = new Set();
@@ -263,8 +264,21 @@
 
   function renderTop() {
     const top = $('topbar');
+    if (tab === 'me') {
+      top.innerHTML = `
+        <div class="brand">${icon('cat')}<span>猫咪照料</span></div>
+        <span class="spacer"></span>
+        <button class="icon-btn" data-act="backup" aria-label="备份">${icon('down')}</button>
+      `;
+      return;
+    }
     top.innerHTML = `
-      <div class="brand">${icon('cat')}<span>猫咪照料</span></div>
+      <button class="cat-switch" data-act="familyMenuSheet">
+        <span class="avatar">${icon('home')}</span>
+        <span class="cat-name">${esc(familyName())}</span>
+        <span class="top-count">${familyCats().length} 只猫</span>
+        ${icon('chev', 'chev')}
+      </button>
       <span class="spacer"></span>
       <button class="icon-btn" data-act="backup" aria-label="备份">${icon('down')}</button>
     `;
@@ -598,7 +612,6 @@
             <span class="row-name">${esc(c.name)}</span>
             <span class="row-sub">${esc(sub)}</span>
           </span>
-          ${miniWeightChart(c)}
           ${icon('chev')}
         </button>`;
       })
@@ -776,15 +789,15 @@
         ${
           cat
             ? `<div class="field">
-                <label class="label">体重变化</label>
+                <label class="label">体重变化 · ${(cat.weights || []).length} 次记录</label>
                 ${
                   (cat.weights || []).length >= 2
-                    ? `<div class="wchart-box">${weightChart(cat)}</div>`
-                    : `<div class="hint-block">${
-                        (cat.weights || []).length
-                          ? '再填写一次体重并保存，就能看到变化曲线。'
-                          : '填写体重并保存后，这里会记录每次变化。'
-                      }</div>`
+                    ? `<div class="chips" style="padding:2px 0 10px">${WEIGHT_RANGES.map(
+                        ([k, label]) =>
+                          `<button type="button" class="chip ${weightRange === k ? 'on' : ''}" data-act="weightRange" data-key="${k}">${label}</button>`
+                      ).join('')}</div>
+                       <div class="wchart-box" id="weightChartBox">${weightChart(cat)}</div>`
+                    : `<div class="hint-block">填写体重并保存后，这里会记录每次变化；满两次就能看到曲线。</div>`
                 }
               </div>`
             : ''
@@ -811,74 +824,85 @@
     return t.metric === 'weight' || (t.category === 'monitor' && /体重/.test(t.name || ''));
   }
 
-  function weightChart(cat) {
-    const ws = ((cat && cat.weights) || [])
+  const WEIGHT_RANGES = [
+    ['1m', '近 1 月', 30],
+    ['3m', '近 3 月', 90],
+    ['6m', '近 6 月', 180],
+    ['1y', '近 1 年', 365],
+    ['all', '全部', null],
+  ];
+
+  function weightPoints(cat) {
+    const all = ((cat && cat.weights) || [])
       .slice()
-      .sort((a, b) => new Date(a.at) - new Date(b.at))
-      .slice(-12);
-    if (ws.length < 2) return '';
-    const w = 300;
-    const h = 96;
-    const vals = ws.map((x) => x.kg);
+      .sort((a, b) => new Date(a.at) - new Date(b.at));
+    const range = WEIGHT_RANGES.find((r) => r[0] === weightRange);
+    if (!range || !range[2]) return all;
+    const since = new Date(Date.now() - range[2] * 86400000);
+    since.setHours(0, 0, 0, 0);
+    return all.filter((w) => new Date(w.at).getTime() >= since.getTime());
+  }
+
+  function weightChart(cat) {
+    const ws = weightPoints(cat);
+    if (ws.length < 2) {
+      return `<div class="hint-block" style="padding:12px 4px">${
+        ws.length
+          ? '这个时间段只有 1 次记录，再记录一次就能看到变化曲线。'
+          : '这个时间段还没有体重记录。'
+      }</div>`;
+    }
+    const W = 320;
+    const H = 172;
+    const L = 38;
+    const R = 14;
+    const T = 16;
+    const B = 30;
+    const t0 = new Date(ws[0].at).getTime();
+    const t1 = new Date(ws[ws.length - 1].at).getTime();
+    const span = Math.max(t1 - t0, 86400000);
+    const vals = ws.map((w) => w.kg);
     let min = Math.min(...vals);
     let max = Math.max(...vals);
-    if (max - min < 0.2) {
-      min -= 0.1;
-      max += 0.1;
+    if (max - min < 0.4) {
+      const mid = (min + max) / 2;
+      min = mid - 0.2;
+      max = mid + 0.2;
     }
-    const lo = min - (max - min) * 0.15;
-    const hi = max + (max - min) * 0.15;
-    const padL = 6;
-    const padR = 6;
-    const padT = 10;
-    const padB = 16;
-    const pts = ws.map((x, i) => {
-      const px = padL + (i * (w - padL - padR)) / (ws.length - 1);
-      const py = h - padB - ((x.kg - lo) / (hi - lo)) * (h - padT - padB);
-      return [Math.round(px), Math.round(py)];
-    });
-    const line = pts.map((pt) => pt.join(',')).join(' ');
-    const area = `${padL},${h - padB} ${line} ${w - padR},${h - padB}`;
+    const pad = (max - min) * 0.18;
+    min -= pad;
+    max += pad;
+    const px = (t) => L + ((t - t0) / span) * (W - L - R);
+    const py = (v) => H - B - ((v - min) / (max - min)) * (H - T - B);
+    const pts = ws.map((w) => [px(new Date(w.at).getTime()), py(w.kg)]);
+    const line = pts.map((pt) => `${pt[0].toFixed(1)},${pt[1].toFixed(1)}`).join(' ');
+    const area = `${pts[0][0].toFixed(1)},${H - B} ${line} ${pts[pts.length - 1][0].toFixed(1)},${H - B}`;
     const dots = pts
       .map(
         (pt, i) =>
-          `<circle cx="${pt[0]}" cy="${pt[1]}" r="${i === pts.length - 1 ? 3.4 : 2.2}" fill="${i === pts.length - 1 ? '#2F9C7C' : '#9BD6C3'}"/>`
+          `<circle cx="${pt[0].toFixed(1)}" cy="${pt[1].toFixed(1)}" r="${i === pts.length - 1 ? 3.4 : 2.1}" fill="${i === pts.length - 1 ? '#2F9C7C' : '#9BD6C3'}"/>`
       )
       .join('');
-    return `<svg class="wchart" viewBox="0 0 ${w} ${h}" role="img" aria-label="体重变化">
+    const ticks = [0, 0.5, 1]
+      .map((f) => {
+        const v = min + (max - min) * f;
+        const yy = py(v);
+        return `<line x1="${L}" y1="${yy.toFixed(1)}" x2="${W - R}" y2="${yy.toFixed(1)}" stroke="#F0E7D6" stroke-width="1" stroke-dasharray="3 4"/><text x="${L - 6}" y="${(yy + 3.5).toFixed(1)}" font-size="9" fill="#B49C8F" text-anchor="end">${v.toFixed(1)}</text>`;
+      })
+      .join('');
+    const fmt = (t) => {
+      const d = new Date(t);
+      return `${d.getMonth() + 1}/${d.getDate()}`;
+    };
+    return `<svg class="wchart" viewBox="0 0 ${W} ${H}" role="img" aria-label="体重随时间的变化">
+      ${ticks}
       <polygon points="${area}" fill="rgba(47,156,124,.10)"/>
-      <polyline points="${line}" fill="none" stroke="#2F9C7C" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+      <polyline points="${line}" fill="none" stroke="#2F9C7C" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
       ${dots}
-      <text x="${pts[0][0]}" y="${h - 4}" font-size="10" fill="#B49C8F">${ws[0].kg}</text>
-      <text x="${w - padR}" y="${h - 4}" font-size="10" fill="#2F9C7C" text-anchor="end">${ws[ws.length - 1].kg} kg</text>
+      <text x="${L}" y="${H - 9}" font-size="9" fill="#B49C8F">${fmt(t0)}</text>
+      <text x="${W - R}" y="${H - 9}" font-size="9" fill="#B49C8F" text-anchor="end">${fmt(t1)}</text>
+      <text x="${pts[pts.length - 1][0].toFixed(1)}" y="${Math.max(pts[pts.length - 1][1] - 10, 11).toFixed(1)}" font-size="10" fill="#2F9C7C" text-anchor="end">${ws[ws.length - 1].kg} kg</text>
     </svg>`;
-  }
-
-  function miniWeightChart(cat) {
-    const ws = ((cat.weights || [])
-      .slice()
-      .sort((a, b) => new Date(a.at) - new Date(b.at))
-      .slice(-12));
-    if (ws.length < 2) return '';
-    const vals = ws.map((x) => x.kg);
-    let min = Math.min(...vals);
-    let max = Math.max(...vals);
-    if (max - min < 0.2) {
-      min -= 0.1;
-      max += 0.1;
-    }
-    const w = 100;
-    const h = 36;
-    const pad = 4;
-    const pts = ws.map((x, i) => {
-      const px = pad + (i * (w - pad * 2)) / (ws.length - 1);
-      const py = h - pad - ((x.kg - min) / (max - min)) * (h - pad * 2);
-      return [Math.round(px * 10) / 10, Math.round(py * 10) / 10];
-    });
-    const last = pts[pts.length - 1];
-    return `<svg class="minichart" viewBox="0 0 ${w} ${h}" aria-hidden="true"><polyline points="${pts
-      .map((pt) => pt.join(','))
-      .join(' ')}" fill="none" stroke="#2F9C7C" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${last[0]}" cy="${last[1]}" r="2.8" fill="#2F9C7C"/></svg>`;
   }
 
   function weightSheet(task, onDone, catId) {
@@ -1583,26 +1607,20 @@
       render();
       return;
     }
-    if (act === 'logWeightCat') {
-      const cid = id;
-      weightSheet(
-        null,
-        (kg) => {
-          if (!kg) return;
-          const c = data.cats.find((x) => x.id === cid);
-          if (!c) return;
-          c.weights = c.weights || [];
-          c.weights.push({ at: new Date().toISOString(), kg });
-          c.weight = String(kg);
-          save();
-          render();
-          toast(`已记录 ${kg} kg`);
-        },
-        cid
-      );
+    if (act === 'weightRange') {
+      weightRange = el.dataset.key;
+      const sheet = document.querySelector('.sheet');
+      if (sheet) {
+        sheet.querySelectorAll('[data-act="weightRange"]').forEach((b) => {
+          b.classList.toggle('on', b.dataset.key === weightRange);
+        });
+        const hidden = sheet.querySelector('[name="catId"]');
+        const cat = hidden && data.cats.find((c) => c.id === hidden.value);
+        const box = document.getElementById('weightChartBox');
+        if (cat && box) box.innerHTML = weightChart(cat);
+      }
       return;
     }
-    if (act === 'catMenu') return catMenuSheet();
     if (act === 'switchCat') {
       data.activeCat = id;
       save();
@@ -1921,6 +1939,7 @@
   if (!data.activeCat && data.cats.length) data.activeCat = data.cats[0].id;
   render();
   if (needsSave) save();
+
 
 
 
