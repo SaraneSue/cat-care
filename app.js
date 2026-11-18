@@ -737,6 +737,8 @@
           </div>
           <button class="btn" type="submit">开始</button>
         </form>
+        <button class="btn btn-ghost" type="button" data-act="import" style="margin-top:10px">导入已有备份</button>
+        <p class="onboard-hint">换手机或重装后，用之前导出的 JSON 恢复</p>
       </div>`;
   }
 
@@ -1500,7 +1502,9 @@
     a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 3000);
     render();
-    toast('备份已导出');
+    toast(
+      `已导出 ${data.families.length} 个家庭 · ${data.cats.length} 只猫 · ${data.tasks.length} 个计划`
+    );
   }
 
   function importBackup(file) {
@@ -1516,28 +1520,35 @@
         }
         confirmSheet('导入会覆盖当前所有数据，确定继续吗？', () => {
           const d = parsed.data;
+          const families =
+            Array.isArray(d.families) && d.families.length
+              ? d.families
+              : [
+                  {
+                    id: (d.family && d.family.id) || 'fam',
+                    name: (d.family && d.family.name) || '我的家',
+                  },
+                ];
           data = {
             version: 1,
+            families,
+            activeFamily: d.activeFamily || families[0].id,
             cats: d.cats || [],
             activeCat: d.activeCat || (d.cats[0] && d.cats[0].id) || null,
             tasks: d.tasks || [],
             records: d.records || [],
             settings: d.settings || { backupAt: null },
           };
-          if (!Array.isArray(data.families) || !data.families.length) {
-            const f = data.family || {};
-            data.families = [{ id: f.id || 'fam', name: f.name || '我的家' }];
-          }
-          delete data.family;
-          if (!data.activeFamily || !data.families.some((f) => f.id === data.activeFamily)) {
+          if (!data.families.some((f) => f.id === data.activeFamily)) {
             data.activeFamily = data.families[0].id;
           }
-          data.cats = (data.cats || []).map((c) => ({
+          const famIds = new Set(data.families.map((f) => f.id));
+          data.cats = data.cats.map((c) => ({
             ...c,
-            familyId: c.familyId || data.activeFamily,
+            familyId: famIds.has(c.familyId) ? c.familyId : data.activeFamily,
             weights: Array.isArray(c.weights) ? c.weights : [],
           }));
-          data.tasks = (data.tasks || []).map((t) => {
+          data.tasks = data.tasks.map((t) => {
             const shared = ['food', 'litter', 'env'].includes(t.category);
             const scope = t.scope || (shared ? 'family' : 'cat');
             const cat = data.cats.find((c) => c.id === t.catId);
@@ -1547,7 +1558,9 @@
               catId: scope === 'family' ? null : t.catId,
               familyId:
                 scope === 'family'
-                  ? t.familyId || data.activeFamily
+                  ? famIds.has(t.familyId)
+                    ? t.familyId
+                    : data.activeFamily
                   : cat
                   ? cat.familyId
                   : data.activeFamily,
@@ -1559,12 +1572,14 @@
                   : null,
             };
           });
-          data.records = (data.records || []).map((r) => {
+          data.records = data.records.map((r) => {
             const t = data.tasks.find((x) => x.id === r.taskId);
             const c = data.cats.find((x) => x.id === r.catId);
             return {
               ...r,
-              familyId: r.familyId || (t && t.familyId) || (c && c.familyId) || data.activeFamily,
+              familyId: famIds.has(r.familyId)
+                ? r.familyId
+                : (t && t.familyId) || (c && c.familyId) || data.activeFamily,
             };
           });
           if (!data.cats.length) data = defaultData();
@@ -1939,6 +1954,9 @@
   if (!data.activeCat && data.cats.length) data.activeCat = data.cats[0].id;
   render();
   if (needsSave) save();
+
+
+
 
 
 

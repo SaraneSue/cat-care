@@ -1282,3 +1282,9 @@ body {
   color: var(--text);
   letter-spacing: 0.5px;
 }
+
+.onboard-hint {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--mute);
+}
