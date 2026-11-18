@@ -102,6 +102,8 @@
   let data = load();
   let tab = 'today';
   let planFilter = 'all';
+  let planScope = 'all';
+  let tplScope = 'family';
   let planManage = false;
   const selectedTasks = new Set();
   let doneOpen = false;
@@ -110,6 +112,7 @@
   function defaultData() {
     return {
       version: 1,
+      family: { id: 'fam', name: '我的家' },
       cats: [],
       activeCat: null,
       tasks: [],
@@ -127,6 +130,21 @@
       d.tasks = d.tasks || [];
       d.records = d.records || [];
       d.settings = d.settings || { backupAt: null };
+      if (!d.family || !d.family.name) {
+        d.family = { id: 'fam', name: '我的家' };
+        needsSave = true;
+      }
+      if (d.cats.some((c) => !c.familyId)) {
+        d.cats = d.cats.map((c) => ({ ...c, familyId: d.family.id }));
+        needsSave = true;
+      }
+      if (d.tasks.some((t) => !t.scope)) {
+        d.tasks = d.tasks.map((t) => {
+          const shared = ['food', 'litter', 'env'].includes(t.category);
+          return { ...t, scope: shared ? 'family' : 'cat', catId: shared ? null : t.catId };
+        });
+        needsSave = true;
+      }
       if (d.tasks.some((t) => !t.freqKind)) {
         needsSave = true;
         d.tasks = d.tasks.map(L.migrateTask);
@@ -167,6 +185,23 @@
     return data.tasks.filter((t) => t.catId === cat.id);
   }
 
+  const familyName = () => (data.family && data.family.name) || '我的家';
+
+  function scopeLabel(t) {
+    if (t.scope === 'family') return '全家';
+    const c = data.cats.find((x) => x.id === t.catId);
+    return c ? c.name : '未分配';
+  }
+
+  function visiblePlanTasks() {
+    let list = data.tasks;
+    if (planScope === 'family') list = list.filter((t) => t.scope === 'family');
+    else if (planScope !== 'all')
+      list = list.filter((t) => t.scope === 'cat' && t.catId === planScope);
+    if (planFilter !== 'all') list = list.filter((t) => t.category === planFilter);
+    return list;
+  }
+
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({
       '&': '&amp;',
@@ -193,16 +228,12 @@
   }
 
   function renderTop() {
-    const cat = activeCat();
     const top = $('topbar');
-    if (!cat) {
-      top.innerHTML = '';
-      return;
-    }
     top.innerHTML = `
-      <button class="cat-switch" data-act="catMenu">
-        <span class="avatar">${icon('cat')}</span>
-        <span class="cat-name">${esc(cat.name)}</span>
+      <button class="cat-switch" data-act="familySheet">
+        <span class="avatar">${icon('home')}</span>
+        <span class="cat-name">${esc(familyName())}</span>
+        <span class="top-count">${data.cats.length} 只猫</span>
         ${icon('chev', 'chev')}
       </button>
       <span class="spacer"></span>
@@ -255,7 +286,7 @@
     return `${L.scheduleLabel(t)} · ${L.slotName(t.slot)}`;
   }
 
-  function taskRow(t, cls, records) {
+  function taskRow(t, cls, records, showTag) {
     const c = CATS[t.category] || CATS.food;
     const daily = t.freqKind === 'daily';
     const need = Math.max(1, t.timesPerDay || 1);
@@ -264,7 +295,7 @@
       <div class="task ${cls}" data-act="taskDetail" data-id="${t.id}">
         <span class="cat-icon" style="background:${c.bg};color:${c.fg}">${icon(c.icon)}</span>
         <div class="task-main">
-          <div class="task-name">${esc(t.name)}</div>
+          <div class="task-name">${esc(t.name)}${showTag ? `<span class="scope-tag">${esc(scopeLabel(t))}</span>` : ''}</div>
           <div class="task-meta">${esc(taskMeta(t, records))}</div>
         </div>
         ${daily && need > 1 ? `<span class="count">${done}/${need}</span>` : ''}
@@ -274,9 +305,31 @@
 
   function todayHTML() {
     const now = new Date();
-    const b = L.bucketTasks(catTasks(), data.records, now);
-    const total = b.overdue.length + b.today.length + b.done.length;
-    const pct = total ? Math.round((b.done.length / total) * 100) : 0;
+    const recs = data.records;
+    const stateOf = (t) => L.classify(t, recs, now);
+    const slotRank = (t) => ({ morning: 0, evening: 1, any: 2 }[t.slot] ?? 2);
+    const bySlot = (a, b) =>
+      slotRank(a) - slotRank(b) || new Date(a.nextDueAt) - new Date(b.nextDueAt);
+
+    const enabled = data.tasks.filter((t) => t.enabled);
+    const overdue = enabled
+      .filter((t) => stateOf(t) === 'overdue')
+      .sort((a, b) => new Date(a.nextDueAt) - new Date(b.nextDueAt));
+    const done = enabled
+      .filter((t) => stateOf(t) === 'done')
+      .sort((a, b) => new Date(b.lastDoneAt || 0) - new Date(a.lastDoneAt || 0));
+    const familyToday = enabled
+      .filter((t) => t.scope === 'family' && stateOf(t) === 'today')
+      .sort(bySlot);
+    const perCat = data.cats.map((cat) => ({
+      cat,
+      list: enabled
+        .filter((t) => t.scope === 'cat' && t.catId === cat.id && stateOf(t) === 'today')
+        .sort(bySlot),
+    }));
+    const todayCount = familyToday.length + perCat.reduce((n, g) => n + g.list.length, 0);
+    const total = overdue.length + todayCount + done.length;
+    const pct = total ? Math.round((done.length / total) * 100) : 0;
     const dateStr = `${now.getMonth() + 1} 月 ${now.getDate()} 日`;
 
     if (!total) {
@@ -288,62 +341,101 @@
         </div>`;
     }
 
-    const doneBlock = b.done.length
-      ? `
-        <div class="section-title" data-act="toggleDone">
-          已完成 · ${b.done.length}
-          <span class="count">${doneOpen ? '收起' : '展开'}</span>
-        </div>
-        <div class="${doneOpen ? '' : 'hidden'}">
-          ${b.done.map((t) => taskRow(t, 'done', data.records)).join('')}
-        </div>`
+    const doneBlock = done.length
+      ? `<div class="section-title" data-act="toggleDone">
+           已完成 · ${done.length}
+           <span class="count">${doneOpen ? '收起' : '展开'}</span>
+         </div>
+         <div class="${doneOpen ? '' : 'hidden'}">
+           ${done.map((t) => taskRow(t, 'done', recs, true)).join('')}
+         </div>`
       : '';
+
+    const catSections = perCat
+      .map(
+        ({ cat, list }) => `
+        <div class="cat-section-head">
+          <span class="avatar xs">${icon('cat')}</span>
+          <span class="cat-section-name">${esc(cat.name)}</span>
+          <span class="cat-section-count">${list.length ? `${list.length} 项` : '今天没有安排'}</span>
+        </div>
+        ${list.map((t) => taskRow(t, '', recs, false)).join('')}`
+      )
+      .join('');
 
     return `
       <div class="hero">
         <div class="hero-top"><span>今天</span><span>${dateStr}</span></div>
-        <div class="hero-count">${b.done.length} <small>/ ${total}</small></div>
-        <div class="hero-sub">已完成 ${b.done.length} 件，还有 ${total - b.done.length} 件</div>
+        <div class="hero-count">${done.length} <small>/ ${total}</small></div>
+        <div class="hero-sub">${esc(familyName())} · ${data.cats.length} 只猫 · 已完成 ${done.length} 件</div>
         <div class="bar"><i style="width:${pct}%"></i></div>
         <span class="hero-cat">${icon('cat')}</span>
       </div>
       ${
-        b.overdue.length
-          ? `<div class="section-title danger">已逾期 · ${b.overdue.length}</div>
-             ${b.overdue.map((t) => taskRow(t, 'overdue', data.records)).join('')}`
+        overdue.length
+          ? `<div class="section-title danger">已逾期 · ${overdue.length}</div>
+             ${overdue.map((t) => taskRow(t, 'overdue', recs, true)).join('')}`
           : ''
       }
       ${
-        b.today.length
-          ? `<div class="section-title">今天 · ${b.today.length}</div>
-             ${b.today.map((t) => taskRow(t, '', data.records)).join('')}`
+        familyToday.length
+          ? `<div class="section-title">全家 · ${familyToday.length}</div>
+             ${familyToday.map((t) => taskRow(t, '', recs, false)).join('')}`
           : ''
       }
+      ${catSections}
       ${doneBlock}
-      ${b.today.length === 0 && b.overdue.length === 0 ? '<div class="hint-block">今天的事都做完了，厉害。</div>' : ''}
+      ${
+        todayCount === 0 && overdue.length === 0
+          ? '<div class="hint-block">今天的事都做完了，厉害。</div>'
+          : ''
+      }
     `;
   }
 
   /* ---------------- 渲染：计划 ---------------- */
   function planHTML() {
-    const tasks = catTasks().filter((t) => t.enabled || true);
-    const groups = CAT_KEYS.filter(
-      (k) => planFilter === 'all' || planFilter === k
-    )
-      .map((k) => ({
-        key: k,
-        list: tasks.filter((t) => t.category === k && t.enabled),
-        off: tasks.filter((t) => t.category === k && !t.enabled),
-      }))
-      .filter((g) => g.list.length || g.off.length);
+    const SHORT = {
+      food: '饮食',
+      litter: '排泄',
+      groom: '清洁',
+      medical: '医疗',
+      monitor: '监测',
+      env: '环境',
+    };
+    const scopes = [['all', '全部'], ['family', '全家']].concat(
+      data.cats.map((c) => [c.id, c.name])
+    );
+    if (!scopes.some(([k]) => k === planScope)) planScope = 'all';
 
-    const SHORT = { food: '饮食', litter: '排泄', groom: '清洁', medical: '医疗', monitor: '监测', env: '环境' };
-    const chips = [['all', '全部'], ...CAT_KEYS.map((k) => [k, SHORT[k]])]
+    const scopeChips = scopes
+      .map(
+        ([k, label]) =>
+          `<button class="chip ${planScope === k ? 'on' : ''}" data-act="scopeFilter" data-key="${k}">${esc(label)}</button>`
+      )
+      .join('');
+    const catChips = [['all', '全部'], ...CAT_KEYS.map((k) => [k, SHORT[k]])]
       .map(
         ([k, label]) =>
           `<button class="chip ${planFilter === k ? 'on' : ''}" data-act="filter" data-key="${k}">${label}</button>`
       )
       .join('');
+
+    const visible = visiblePlanTasks();
+    const sections = [];
+    if (planScope === 'all') {
+      const fam = visible.filter((t) => t.scope === 'family');
+      if (fam.length) sections.push({ title: '全家', list: fam });
+      data.cats.forEach((c) => {
+        const list = visible.filter((t) => t.scope === 'cat' && t.catId === c.id);
+        if (list.length) sections.push({ title: c.name, list });
+      });
+    } else {
+      CAT_KEYS.forEach((k) => {
+        const list = visible.filter((t) => t.category === k);
+        if (list.length) sections.push({ title: CATS[k].name, list });
+      });
+    }
 
     const rowHTML = (t, off) => {
       const c = CATS[t.category] || CATS.food;
@@ -361,39 +453,45 @@
         </div>`;
     };
 
+    const body = sections
+      .map((sec) => {
+        const on = sec.list.filter((t) => t.enabled);
+        const off = sec.list.filter((t) => !t.enabled);
+        return `
+          <div class="plan-group">
+            <div class="section-title">${esc(sec.title)}</div>
+            ${on.map((t) => rowHTML(t, false)).join('')}
+            ${off.map((t) => rowHTML(t, true)).join('')}
+          </div>`;
+      })
+      .join('');
+
     return `
-      <div class="chips">${chips}</div>
+      <div class="chips">${scopeChips}</div>
+      <div class="chips" style="padding-top:0">${catChips}</div>
       ${
-        groups.length
+        visible.length
           ? `<div class="plan-tools">
               <span class="plan-hint">${planManage ? `已选 ${selectedTasks.size} 项` : '点任务修改计划 · 右下角 ＋ 添加照料项'}</span>
               <button class="link-btn" data-act="toggleManage">${planManage ? '完成' : '管理'}</button>
             </div>`
           : ''
       }
-      ${groups
-        .map(
-          (g) => `
-        <div class="plan-group">
-          <div class="section-title">${CATS[g.key].name}</div>
-          ${g.list.map((t) => rowHTML(t, false)).join('')}
-          ${g.off.map((t) => rowHTML(t, true)).join('')}
-        </div>`
-        )
-        .join('')}
       ${
-        groups.length
-          ? ''
-          : `<div class="empty">${icon('cat')}<div class="empty-title">还没有照料项</div><div class="empty-sub">点右下角的 ＋ 从模板里挑</div></div>`
+        visible.length
+          ? body
+          : `<div class="empty">${icon('cat')}<div class="empty-title">这里还没有计划</div><div class="empty-sub">点右下角的 ＋ 从模板里挑</div></div>`
       }
       ${planManage ? '<div style="height:80px"></div>' : ''}
       ${
         planManage
           ? `<div class="manage-bar">
-              <button class="mb-btn" data-act="selectAll">${selectedTasks.size === catTasks().length ? '取消全选' : '全选'}</button>
+              <button class="mb-btn" data-act="selectAll">${selectedTasks.size === visible.length && visible.length ? '取消全选' : '全选'}</button>
               <button class="mb-btn strong" data-act="deleteSelected" ${selectedTasks.size ? '' : 'disabled'}>删除所选${selectedTasks.size ? ` (${selectedTasks.size})` : ''}</button>
               <button class="mb-btn danger" data-act="clearAll">清空全部</button>
             </div>`
+          : visible.length
+          ? `<button class="fab" data-act="addTask" aria-label="添加照料项">${icon('plus')}</button>`
           : `<button class="fab" data-act="addTask" aria-label="添加照料项">${icon('plus')}</button>`
       }
     `;
@@ -401,9 +499,8 @@
 
   /* ---------------- 渲染：记录 ---------------- */
   function recordsHTML() {
-    const cat = activeCat();
     const recs = data.records
-      .filter((r) => r.catId === cat.id)
+      .slice()
       .sort((a, b) => new Date(b.at) - new Date(a.at))
       .slice(0, 80);
     const stat = L.weekStats(recs, new Date());
@@ -431,9 +528,11 @@
             const task = data.tasks.find((t) => t.id === r.taskId);
             const name = r.name || (task || {}).name || '已删除';
             const amount = r.amount && task && isWeightTask(task) ? ` · ${r.amount} kg` : '';
+            const tag = task ? scopeLabel(task) : '—';
             return `<div class="rec">
               <span class="rec-time">${hh}:${mm}</span>
               <span class="rec-name">${esc(name)}${amount}</span>
+              <span class="scope-tag">${esc(tag)}</span>
               <span class="rec-status ${r.status}">${r.status === 'done' ? '完成' : '跳过'}</span>
             </div>`;
           })
@@ -453,32 +552,40 @@
 
   /* ---------------- 渲染：我的 ---------------- */
   function meHTML() {
-    const cat = activeCat();
     const lastBackup = data.settings.backupAt
       ? `${L.formatDay(data.settings.backupAt)}备份`
       : '还没备份过';
+
+    const catRows = data.cats
+      .map((c) => {
+        const w = weightOf(c);
+        const sub = [c.breed, w ? `${w} kg` : '未记录体重'].filter(Boolean).join(' · ');
+        return `<button class="list-row" data-act="editCat" data-id="${c.id}">
+          <span class="avatar sm">${icon('cat')}</span>
+          <span class="grow">
+            <span class="row-name">${esc(c.name)}</span>
+            <span class="row-sub">${esc(sub)}</span>
+          </span>
+          ${icon('chev')}
+        </button>`;
+      })
+      .join('');
+
     return `
-      <div class="me-card" data-act="editCat">
-        <span class="avatar">${icon('cat')}</span>
+      <div class="me-card" data-act="familySheet">
+        <span class="avatar">${icon('home')}</span>
         <div class="grow">
-          <div class="me-name">${esc(cat.name)}</div>
-          <div class="me-sub">${[cat.breed, cat.birthday ? cat.birthday.slice(0, 10) : ''].filter(Boolean).join(' · ') || '点击补充资料'}</div>
+          <div class="me-name">${esc(familyName())}</div>
+          <div class="me-sub">${data.cats.length} 只猫</div>
         </div>
         ${icon('chev', 'chev')}
       </div>
 
-      ${
-        (cat.weights || []).length
-          ? `<div class="weight-card">
-              <div class="weight-head"><span>体重</span><span class="hint">最近 ${Math.min(cat.weights.length, 12)} 次</span></div>
-              <div class="weight-now">${weightOf(cat)} <small>kg</small></div>
-              ${weightChart(cat)}
-              <button class="link-btn" data-act="logWeight">记录体重</button>
-            </div>`
-          : `<button class="list-row" data-act="logWeight">
-              <span class="grow">记录体重</span><span class="hint">还没有数据</span>${icon('plus')}
-            </button>`
-      }
+      <div class="section-title">猫咪</div>
+      ${catRows || '<div class="hint-block">还没有猫咪</div>'}
+      <button class="list-row" data-act="addCat">
+        <span class="grow">添加猫咪</span>${icon('plus')}
+      </button>
 
       <div class="section-title">数据</div>
       <button class="list-row" data-act="backup">
@@ -489,14 +596,41 @@
       </button>
 
       <div class="section-title">其他</div>
-      <button class="list-row" data-act="addCat">
-        <span class="grow">添加猫咪</span>${icon('plus')}
-      </button>
       <button class="list-row" data-act="about">
         <span class="grow">关于与免责声明</span>${icon('chev')}
       </button>
       <div class="hint-block">v1.0 · 数据只存在这台设备上，记得偶尔导出备份。</div>
     `;
+  }
+
+  function familySheet() {
+    const cats = data.cats
+      .map(
+        (c) => `<button class="list-row" data-act="editCat" data-id="${c.id}">
+          <span class="grow">${esc(c.name)}</span>${icon('chev')}
+        </button>`
+      )
+      .join('');
+    openSheet(`
+      ${sheetHead('家庭')}
+      <div class="field">
+        <label class="label">家庭名称</label>
+        <input class="input" id="familyInput" value="${esc(familyName())}" />
+      </div>
+      <button class="btn" id="saveFamily">保存名称</button>
+      <div class="section-title">猫咪</div>
+      ${cats || '<div class="hint-block">还没有猫咪</div>'}
+      <button class="list-row" data-act="addCat"><span class="grow">添加猫咪</span>${icon('plus')}</button>
+    `);
+    $('saveFamily').addEventListener('click', () => {
+      const v = $('familyInput').value.trim();
+      if (!v) return toast('给家庭起个名字');
+      data.family.name = v;
+      save();
+      closeSheet();
+      render();
+      toast('已保存');
+    });
   }
 
   function onboardingHTML() {
@@ -586,6 +720,7 @@
               </div>`
             : ''
         }
+        ${cat ? `<button type="button" class="btn btn-ghost" data-act="logWeightCat" data-id="${cat.id}" style="margin-bottom:12px">记录体重</button>` : ''}
         ${cat ? `<input type="hidden" name="catId" value="${cat.id}" />` : ''}
         <button class="btn" type="submit">保存</button>
         ${cat ? `<button class="btn btn-danger" type="button" data-act="deleteCat" data-id="${cat.id}">删除这只猫</button>` : ''}
@@ -651,8 +786,8 @@
     </svg>`;
   }
 
-  function weightSheet(task, onDone) {
-    const cat = activeCat();
+  function weightSheet(task, onDone, catId) {
+    const cat = catId ? data.cats.find((c) => c.id === catId) : activeCat();
     const lw = weightOf(cat);
     openSheet(`
       ${sheetHead('记录体重')}
@@ -712,6 +847,7 @@
 
     const row = (k, v) => `<div class="info-row"><span>${k}</span><span>${v}</span></div>`;
     const planRows = [
+      row('归属', scopeLabel(t)),
       row('频率', L.scheduleLabel(t)),
       row('时段', L.slotName(t.slot)),
       row('上次照料', t.lastDoneAt ? L.formatDate(t.lastDoneAt) : '还没有记录'),
@@ -768,7 +904,7 @@
 
   /* ---------- 编辑：只改计划 ---------- */
   function taskSheet(id) {
-    const cat = activeCat();
+    const cat = activeCat() || data.cats[0] || { id: null };
     const task =
       data.tasks.find((t) => t.id === id) || {
         id: null,
@@ -793,6 +929,13 @@
       (k) =>
         `<option value="${k}" ${task.category === k ? 'selected' : ''}>${CATS[k].name}</option>`
     ).join('');
+    const scopeOf = task.id
+      ? task.scope === 'family'
+        ? 'family'
+        : task.catId
+      : data.cats[0]
+      ? data.cats[0].id
+      : 'family';
 
     const sel =
       task.freqKind === 'daily'
@@ -832,6 +975,20 @@
         <div class="field">
           <label class="label">分类</label>
           <select class="select" name="category">${catRows}</select>
+        </div>
+
+        <div class="field">
+          <label class="label">归属</label>
+          <div class="seg" id="scopeSeg">
+            <button type="button" class="${scopeOf === 'family' ? 'on' : ''}" data-scope="family">全家</button>
+            ${data.cats
+              .map(
+                (c) =>
+                  `<button type="button" class="${scopeOf === c.id ? 'on' : ''}" data-scope="${c.id}">${esc(c.name)}</button>`
+              )
+              .join('')}
+          </div>
+          <div class="hint-block" style="padding-top:6px">「全家」的任务所有猫共享一条记录</div>
         </div>
 
         <div class="field">
@@ -927,6 +1084,12 @@
       [...$('slotSeg').children].forEach((x) => x.classList.toggle('on', x === b));
     });
 
+    $('scopeSeg').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-scope]');
+      if (!b) return;
+      [...$('scopeSeg').children].forEach((x) => x.classList.toggle('on', x === b));
+    });
+
     const enableSeg = $('enableSeg');
     if (enableSeg) {
       enableSeg.addEventListener('click', (e) => {
@@ -974,6 +1137,14 @@
       const appointmentAt = appointmentRaw ? new Date(appointmentRaw) : null;
       const now = new Date();
 
+      const metric =
+        name === '称体重' || (fd.get('category') === 'monitor' && /体重/.test(name))
+          ? 'weight'
+          : null;
+      const scopeBtn = $('scopeSeg') ? $('scopeSeg').querySelector('.on') : null;
+      const scopeVal = scopeBtn ? scopeBtn.dataset.scope : 'family';
+      if (metric && scopeVal === 'family') return toast('体重需要指定一只猫');
+
       const payload = {
         name,
         category: fd.get('category'),
@@ -988,7 +1159,9 @@
           type === 'appointment' && appointmentAt ? appointmentAt.toISOString() : null,
         hospital: String(fd.get('hospital') || '').trim(),
         enabled: enableHidden.value === '1',
-        metric: name === '称体重' || (fd.get('category') === 'monitor' && /体重/.test(name)) ? 'weight' : null,
+        metric,
+        scope: scopeVal === 'family' ? 'family' : 'cat',
+        catId: scopeVal === 'family' ? null : scopeVal,
       };
 
       if (freqKind === 'daily') {
@@ -1006,7 +1179,6 @@
       } else {
         data.tasks.push({
           id: L.uid(),
-          catId: cat.id,
           doneCount: 0,
           note: '',
           createdAt: now.toISOString(),
@@ -1021,20 +1193,29 @@
   }
 
   function templateSheet() {
-    const existing = new Set(catTasks().map((t) => t.name));
-    const groups = CAT_KEYS.map((k) => ({
-      key: k,
-      list: TEMPLATES.filter((t) => t.category === k),
-    }));
-    const rows = groups
+    const existing = new Set(data.tasks.map((t) => t.name));
+    const scopes = [['family', '全家']].concat(data.cats.map((c) => [c.id, c.name]));
+    if (!scopes.some(([k]) => k === tplScope)) tplScope = 'family';
+    const scopeChips = scopes
       .map(
-        (g) => `
-        <div class="section-title">${CATS[g.key].name}</div>
-        ${g.list
+        ([k, label]) =>
+          `<button class="chip ${tplScope === k ? 'on' : ''}" data-act="tplScope" data-key="${k}">${esc(label)}</button>`
+      )
+      .join('');
+    const targetName =
+      tplScope === 'family'
+        ? '全家'
+        : (data.cats.find((c) => c.id === tplScope) || {}).name || '全家';
+
+    const rows = CAT_KEYS.map((k) => {
+      const list = TEMPLATES.filter((t) => t.category === k);
+      return `
+        <div class="section-title">${CATS[k].name}</div>
+        ${list
           .map((t) => {
             const added = existing.has(t.name);
             return `<div class="plan-row ${added ? 'off' : ''}" data-act="addTemplate" data-name="${esc(t.name)}">
-              <span class="cat-icon" style="background:${CATS[g.key].bg};color:${CATS[g.key].fg};width:36px;height:36px;border-radius:12px">${icon(CATS[g.key].icon)}</span>
+              <span class="cat-icon" style="background:${CATS[k].bg};color:${CATS[k].fg};width:36px;height:36px;border-radius:12px">${icon(CATS[k].icon)}</span>
               <div class="plan-main">
                 <div class="plan-name">${esc(t.name)}</div>
                 <div class="plan-meta">${L.scheduleLabel(t)} · ${L.slotName(t.slot)}</div>
@@ -1042,12 +1223,13 @@
               ${added ? '<span class="hint">已添加</span>' : icon('plus')}
             </div>`;
           })
-          .join('')}`
-      )
-      .join('');
+          .join('')}`;
+    }).join('');
+
     openSheet(`
       ${sheetHead('选择照料项')}
-      <div class="hint-block" style="margin-bottom:8px">点一项就加入计划，可以重复添加不同间隔的同名任务。</div>
+      <div class="chips">${scopeChips}</div>
+      <div class="hint-block" style="margin-bottom:8px">加到「${esc(targetName)}」；清洁/医疗类需要先选一只猫</div>
       ${rows}
       <button class="btn" data-act="closeSheet" style="margin-top:14px">完成</button>
     `);
@@ -1114,10 +1296,21 @@
   function addTemplate(name) {
     const tpl = TEMPLATES.find((t) => t.name === name);
     if (!tpl) return;
+    const catSpecific = ['groom', 'medical', 'monitor'].includes(tpl.category);
+    let target = tplScope;
+    if (target === 'family' && catSpecific) {
+      if (data.cats.length === 1) target = data.cats[0].id;
+      else {
+        toast('先在顶部选择要加到哪只猫');
+        return;
+      }
+    }
+    if (target !== 'family' && !data.cats.some((c) => c.id === target)) target = 'family';
     const now = new Date();
     data.tasks.push({
       id: L.uid(),
-      catId: activeCat().id,
+      catId: target === 'family' ? null : target,
+      scope: target === 'family' ? 'family' : 'cat',
       name: tpl.name,
       category: tpl.category,
       type: tpl.type,
@@ -1134,10 +1327,15 @@
       enabled: true,
       doneCount: 0,
       createdAt: now.toISOString(),
+      metric: tpl.metric || null,
     });
     save();
     render();
-    toast('已添加 ' + tpl.name);
+    const where =
+      target === 'family'
+        ? '全家'
+        : (data.cats.find((c) => c.id === target) || {}).name || '全家';
+    toast('已添加 ' + tpl.name + ' · ' + where);
   }
 
   function exportBackup() {
@@ -1188,6 +1386,17 @@
             records: d.records || [],
             settings: d.settings || { backupAt: null },
           };
+          if (!data.family || !data.family.name) data.family = { id: 'fam', name: '我的家' };
+          data.cats = (data.cats || []).map((c) => ({
+            ...c,
+            familyId: c.familyId || data.family.id,
+            weights: Array.isArray(c.weights) ? c.weights : [],
+          }));
+          data.tasks = (data.tasks || []).map((t) => ({
+            ...t,
+            scope: t.scope || 'cat',
+            metric: t.metric !== undefined ? t.metric : t.category === 'monitor' && /体重/.test(t.name) ? 'weight' : null,
+          }));
           if (!data.cats.length) data = defaultData();
           save();
           render();
@@ -1215,6 +1424,26 @@
       $('view').scrollTop = 0;
       return;
     }
+    if (act === 'familySheet') return familySheet();
+    if (act === 'logWeightCat') {
+      const cid = id;
+      weightSheet(
+        null,
+        (kg) => {
+          if (!kg) return;
+          const c = data.cats.find((x) => x.id === cid);
+          if (!c) return;
+          c.weights = c.weights || [];
+          c.weights.push({ at: new Date().toISOString(), kg });
+          c.weight = String(kg);
+          save();
+          render();
+          toast(`已记录 ${kg} kg`);
+        },
+        cid
+      );
+      return;
+    }
     if (act === 'catMenu') return catMenuSheet();
     if (act === 'switchCat') {
       data.activeCat = id;
@@ -1224,7 +1453,7 @@
       return;
     }
     if (act === 'addCat') return catSheet(null);
-    if (act === 'editCat') return catSheet(activeCat().id);
+    if (act === 'editCat') return catSheet(id || (activeCat() || {}).id);
     if (act === 'deleteCat') {
       const cat = data.cats.find((c) => c.id === id);
       return confirmSheet(`删除「${esc(cat.name)}」和它的全部记录？`, () => {
@@ -1255,6 +1484,11 @@
     if (act === 'taskEdit') return taskSheet(id);
     if (act === 'addTask') return templateSheet();
     if (act === 'addTemplate') return addTemplate(el.dataset.name);
+    if (act === 'tplScope') {
+      tplScope = el.dataset.key;
+      templateSheet();
+      return;
+    }
     if (act === 'deleteTask') {
       return confirmSheet('删除这个任务？历史记录也会一起删掉。', () => {
         data.tasks = data.tasks.filter((t) => t.id !== id);
@@ -1277,8 +1511,14 @@
       render();
       return;
     }
+    if (act === 'scopeFilter') {
+      planScope = el.dataset.key;
+      selectedTasks.clear();
+      render();
+      return;
+    }
     if (act === 'selectAll') {
-      const list = catTasks();
+      const list = visiblePlanTasks();
       if (selectedTasks.size === list.length) selectedTasks.clear();
       else list.forEach((t) => selectedTasks.add(t.id));
       render();
@@ -1299,9 +1539,9 @@
       });
     }
     if (act === 'clearAll') {
-      const list = catTasks();
+      const list = data.tasks;
       if (!list.length) return;
-      return confirmSheet(`清空「${esc(activeCat().name)}」的全部 ${list.length} 个计划？记录也会一起删掉。`, () => {
+      return confirmSheet(`清空「${esc(familyName())}」的全部 ${list.length} 个计划？记录也会一起删掉。`, () => {
         const set = new Set(list.map((t) => t.id));
         data.tasks = data.tasks.filter((t) => !set.has(t.id));
         data.records = data.records.filter((r) => !set.has(r.taskId));
@@ -1324,19 +1564,6 @@
     }
     if (act === 'backup') return exportBackup();
     if (act === 'import') return $('importFile').click();
-    if (act === 'logWeight') {
-      weightSheet(null, (kg) => {
-        if (!kg) return;
-        const cat = activeCat();
-        cat.weights = cat.weights || [];
-        cat.weights.push({ at: new Date().toISOString(), kg });
-        cat.weight = String(kg);
-        save();
-        render();
-        toast(`已记录 ${kg} kg`);
-      });
-      return;
-    }
     if (act === 'about') return aboutSheet();
     if (act === 'closeSheet') return closeSheet();
   });
@@ -1350,7 +1577,15 @@
       const name = String(new FormData(f).get('name') || '').trim();
       if (!name) return toast('给猫起个名字');
       const id = L.uid();
-      data.cats.push({ id, name, breed: '', birthday: '', weight: '' });
+      data.cats.push({
+        id,
+        name,
+        breed: '',
+        birthday: '',
+        weight: '',
+        familyId: data.family.id,
+        weights: [],
+      });
       data.activeCat = id;
       save();
       render();
@@ -1374,7 +1609,7 @@
         Object.assign(c, payload);
       } else {
         const id = L.uid();
-        data.cats.push({ id, ...payload });
+        data.cats.push({ id, familyId: data.family.id, weights: [], ...payload });
         if (!data.activeCat) data.activeCat = id;
       }
       save();
@@ -1399,12 +1634,15 @@
       d.setHours(h, m || 0, 0, 0);
       return d.toISOString();
     };
-    const catId = 'cat_demo';
-    const mk = (name, category, freq, slot, extra) =>
+    const famId = 'fam_demo';
+    const catA = 'cat_demo';
+    const catB = 'cat_demo2';
+    const mk = (name, category, freq, slot, scope, catId, extra) =>
       Object.assign(
         {
           id: 't_' + name,
-          catId,
+          catId: scope === 'family' ? null : catId || catA,
+          scope,
           name,
           category,
           type: 'interval',
@@ -1420,49 +1658,50 @@
           enabled: true,
           doneCount: 0,
           createdAt: now.toISOString(),
+          metric: name === '称体重' ? 'weight' : null,
         },
         extra || {}
       );
 
     const tasks = [
-      mk('加猫粮', 'food', { d: 2 }, 'morning', { lastDoneAt: at(0, 8, 10) }),
-      mk('换水', 'food', { d: 1 }, 'morning', { lastDoneAt: at(0, 8, 12) }),
-      mk('铲猫砂', 'litter', { d: 2 }, 'evening'),
-      mk('陪玩', 'env', { d: 1 }, 'evening'),
-      mk('体外驱虫', 'medical', { n: 1, u: 'month' }, 'any', {
+      mk('加猫粮', 'food', { d: 2 }, 'morning', 'family', null, { lastDoneAt: at(0, 8, 10) }),
+      mk('换水', 'food', { d: 1 }, 'morning', 'family', null, { lastDoneAt: at(0, 8, 12) }),
+      mk('铲猫砂', 'litter', { d: 2 }, 'evening', 'family'),
+      mk('陪玩', 'env', { d: 1 }, 'evening', 'family'),
+      mk('体外驱虫', 'medical', { n: 1, u: 'month' }, 'any', 'cat', catA, {
         nextDueAt: at(-2, 10, 0),
         lastDoneAt: at(-32, 10, 0),
       }),
-      mk('年度体检', 'medical', { n: 1, u: 'year' }, 'any', {
+      mk('年度体检', 'medical', { n: 1, u: 'year' }, 'any', 'cat', catA, {
         type: 'appointment',
         nextDueAt: at(0, 9, 0),
         lastDoneAt: at(-365, 9, 0),
       }),
-      mk('刷牙', 'groom', { n: 3, u: 'day' }, 'evening', {
+      mk('刷牙', 'groom', { n: 3, u: 'day' }, 'evening', 'cat', catA, {
         nextDueAt: at(2, 21, 0),
         lastDoneAt: at(-1, 21, 0),
       }),
-      mk('剪指甲', 'groom', { n: 2, u: 'week' }, 'evening', {
-        nextDueAt: at(5, 20, 0),
-        lastDoneAt: at(-9, 20, 0),
-      }),
-      mk('称体重', 'monitor', { n: 1, u: 'month' }, 'any', {
+      mk('剪指甲', 'groom', { n: 2, u: 'week' }, 'evening', 'cat', catB),
+      mk('称体重', 'monitor', { n: 1, u: 'month' }, 'any', 'cat', catB, {
         nextDueAt: at(20, 10, 0),
         lastDoneAt: at(-10, 10, 0),
       }),
+      mk('猫窝清洗', 'env', { n: 3, u: 'week' }, 'any', 'family'),
     ];
     const records = [
-      { id: 'r1', taskId: 't_加猫粮', catId, at: at(0, 8, 10), status: 'done', name: '加猫粮' },
-      { id: 'r2', taskId: 't_换水', catId, at: at(0, 8, 12), status: 'done', name: '换水' },
-      { id: 'r3', taskId: 't_铲猫砂', catId, at: at(-1, 21, 0), status: 'done', name: '铲猫砂' },
-      { id: 'r4', taskId: 't_刷牙', catId, at: at(-1, 21, 5), status: 'done', name: '刷牙' },
-      { id: 'r5', taskId: 't_陪玩', catId, at: at(-1, 20, 30), status: 'skipped', name: '陪玩' },
+      { id: 'r1', taskId: 't_加猫粮', catId: null, at: at(0, 8, 10), status: 'done', name: '加猫粮' },
+      { id: 'r2', taskId: 't_换水', catId: null, at: at(0, 8, 12), status: 'done', name: '换水' },
+      { id: 'r3', taskId: 't_铲猫砂', catId: null, at: at(-1, 21, 0), status: 'done', name: '铲猫砂' },
+      { id: 'r4', taskId: 't_刷牙', catId: catA, at: at(-1, 21, 5), status: 'done', name: '刷牙' },
+      { id: 'r5', taskId: 't_陪玩', catId: null, at: at(-1, 20, 30), status: 'skipped', name: '陪玩' },
     ];
     return {
       version: 1,
+      family: { id: famId, name: '我的家' },
       cats: [
         {
-          id: catId,
+          id: catA,
+          familyId: famId,
           name: '年糕',
           breed: '英短',
           birthday: '2024-05-01',
@@ -1476,8 +1715,21 @@
             { at: at(-2, 10, 0), kg: 4.8 },
           ],
         },
+        {
+          id: catB,
+          familyId: famId,
+          name: '布丁',
+          breed: '橘猫',
+          birthday: '2025-03-10',
+          weight: '3.2',
+          weights: [
+            { at: at(-120, 10, 0), kg: 2.8 },
+            { at: at(-60, 10, 0), kg: 3.0 },
+            { at: at(-10, 10, 0), kg: 3.2 },
+          ],
+        },
       ],
-      activeCat: catId,
+      activeCat: catA,
       tasks,
       records,
       settings: { backupAt: null, createdAt: now.toISOString() },
@@ -1496,6 +1748,8 @@
   if (!data.activeCat && data.cats.length) data.activeCat = data.cats[0].id;
   render();
   if (needsSave) save();
+
+
 
 
 
