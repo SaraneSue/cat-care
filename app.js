@@ -65,6 +65,7 @@
     timesPerDay: freq.d || 1,
     every: freq.n || 1,
     unit: freq.u || 'day',
+    metric: name === '称体重' ? 'weight' : null,
   }));
 
   /* ---------------- 图标 ---------------- */
@@ -127,6 +128,17 @@
       if (d.tasks.some((t) => !t.freqKind)) {
         needsSave = true;
         d.tasks = d.tasks.map(L.migrateTask);
+      }
+      if (d.tasks.some((t) => t.metric === undefined)) {
+        needsSave = true;
+        d.tasks = d.tasks.map((t) => ({
+          ...t,
+          metric: t.metric || (t.category === 'monitor' && /体重/.test(t.name) ? 'weight' : null),
+        }));
+      }
+      if (d.cats.some((c) => !Array.isArray(c.weights))) {
+        needsSave = true;
+        d.cats = d.cats.map((c) => ({ ...c, weights: Array.isArray(c.weights) ? c.weights : [] }));
       }
       return d;
     } catch (e) {
@@ -242,7 +254,7 @@
     const need = Math.max(1, t.timesPerDay || 1);
     const done = daily ? L.doneCountOn(t, records, new Date()) : 0;
     return `
-      <div class="task ${cls}" data-act="openTask" data-id="${t.id}">
+      <div class="task ${cls}" data-act="taskDetail" data-id="${t.id}">
         <span class="cat-icon" style="background:${c.bg};color:${c.fg}">${icon(c.icon)}</span>
         <div class="task-main">
           <div class="task-name">${esc(t.name)}</div>
@@ -330,7 +342,7 @@
       const c = CATS[t.category] || CATS.food;
       const last = t.lastDoneAt ? `上次 ${L.formatDay(t.lastDoneAt)}` : '从未记录';
       return `
-        <div class="plan-row ${off ? 'off' : ''}" data-act="openTask" data-id="${t.id}">
+        <div class="plan-row ${off ? 'off' : ''}" data-act="taskEdit" data-id="${t.id}">
           <span class="cat-icon" style="background:${c.bg};color:${c.fg};width:36px;height:36px;border-radius:12px">${icon(c.icon)}</span>
           <div class="plan-main">
             <div class="plan-name">${esc(t.name)}${off ? ' · 已停用' : ''}</div>
@@ -342,6 +354,7 @@
 
     return `
       <div class="chips">${chips}</div>
+      <div class="hint-block" style="padding:0 6px 10px">点任务修改计划 · 右下角 ＋ 添加照料项</div>
       ${groups
         .map(
           (g) => `
@@ -390,10 +403,12 @@
             const d = new Date(r.at);
             const hh = String(d.getHours()).padStart(2, '0');
             const mm = String(d.getMinutes()).padStart(2, '0');
-            const name = r.name || (data.tasks.find((t) => t.id === r.taskId) || {}).name || '已删除';
+            const task = data.tasks.find((t) => t.id === r.taskId);
+            const name = r.name || (task || {}).name || '已删除';
+            const amount = r.amount && task && isWeightTask(task) ? ` · ${r.amount} kg` : '';
             return `<div class="rec">
               <span class="rec-time">${hh}:${mm}</span>
-              <span class="rec-name">${esc(name)}</span>
+              <span class="rec-name">${esc(name)}${amount}</span>
               <span class="rec-status ${r.status}">${r.status === 'done' ? '完成' : '跳过'}</span>
             </div>`;
           })
@@ -426,6 +441,19 @@
         </div>
         ${icon('chev', 'chev')}
       </div>
+
+      ${
+        (cat.weights || []).length
+          ? `<div class="weight-card">
+              <div class="weight-head"><span>体重</span><span class="hint">最近 ${Math.min(cat.weights.length, 12)} 次</span></div>
+              <div class="weight-now">${weightOf(cat)} <small>kg</small></div>
+              ${weightChart(cat)}
+              <button class="link-btn" data-act="logWeight">记录体重</button>
+            </div>`
+          : `<button class="list-row" data-act="logWeight">
+              <span class="grow">记录体重</span><span class="hint">还没有数据</span>${icon('plus')}
+            </button>`
+      }
 
       <div class="section-title">数据</div>
       <button class="list-row" data-act="backup">
@@ -464,7 +492,10 @@
   /* ---------------- Sheet ---------------- */
   const sheetRoot = $('sheetRoot');
 
+  let closeTimer = null;
+
   function openSheet(html) {
+    clearTimeout(closeTimer);
     sheetRoot.innerHTML = `<div class="sheet-mask" data-act="closeSheet"></div><div class="sheet">${html}</div>`;
     sheetRoot.hidden = false;
     requestAnimationFrame(() => sheetRoot.classList.add('open'));
@@ -472,7 +503,8 @@
 
   function closeSheet() {
     sheetRoot.classList.remove('open');
-    setTimeout(() => {
+    clearTimeout(closeTimer);
+    closeTimer = setTimeout(() => {
       sheetRoot.hidden = true;
       sheetRoot.innerHTML = '';
     }, 220);
@@ -521,6 +553,14 @@
           <label class="label">体重（kg）</label>
           <input class="input" type="number" step="0.1" min="0" name="weight" value="${cat && cat.weight ? cat.weight : ''}" placeholder="4.8" />
         </div>
+        ${
+          cat && (cat.weights || []).length >= 2
+            ? `<div class="field">
+                <label class="label">体重变化</label>
+                <div class="wchart-box">${weightChart(cat)}</div>
+              </div>`
+            : ''
+        }
         ${cat ? `<input type="hidden" name="catId" value="${cat.id}" />` : ''}
         <button class="btn" type="submit">保存</button>
         ${cat ? `<button class="btn btn-danger" type="button" data-act="deleteCat" data-id="${cat.id}">删除这只猫</button>` : ''}
@@ -534,6 +574,174 @@
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
   }
 
+  const weightOf = (cat) => {
+    const ws = (cat && cat.weights) || [];
+    return ws.length ? ws[ws.length - 1].kg : cat && cat.weight ? Number(cat.weight) : null;
+  };
+
+  function isWeightTask(t) {
+    return t.metric === 'weight' || (t.category === 'monitor' && /体重/.test(t.name || ''));
+  }
+
+  function weightChart(cat) {
+    const ws = ((cat && cat.weights) || [])
+      .slice()
+      .sort((a, b) => new Date(a.at) - new Date(b.at))
+      .slice(-12);
+    if (ws.length < 2) return '';
+    const w = 300;
+    const h = 96;
+    const vals = ws.map((x) => x.kg);
+    let min = Math.min(...vals);
+    let max = Math.max(...vals);
+    if (max - min < 0.2) {
+      min -= 0.1;
+      max += 0.1;
+    }
+    const lo = min - (max - min) * 0.15;
+    const hi = max + (max - min) * 0.15;
+    const padL = 6;
+    const padR = 6;
+    const padT = 10;
+    const padB = 16;
+    const pts = ws.map((x, i) => {
+      const px = padL + (i * (w - padL - padR)) / (ws.length - 1);
+      const py = h - padB - ((x.kg - lo) / (hi - lo)) * (h - padT - padB);
+      return [Math.round(px), Math.round(py)];
+    });
+    const line = pts.map((pt) => pt.join(',')).join(' ');
+    const area = `${padL},${h - padB} ${line} ${w - padR},${h - padB}`;
+    const dots = pts
+      .map(
+        (pt, i) =>
+          `<circle cx="${pt[0]}" cy="${pt[1]}" r="${i === pts.length - 1 ? 3.4 : 2.2}" fill="${i === pts.length - 1 ? '#2F9C7C' : '#9BD6C3'}"/>`
+      )
+      .join('');
+    return `<svg class="wchart" viewBox="0 0 ${w} ${h}" role="img" aria-label="体重变化">
+      <polygon points="${area}" fill="rgba(47,156,124,.10)"/>
+      <polyline points="${line}" fill="none" stroke="#2F9C7C" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+      ${dots}
+      <text x="${pts[0][0]}" y="${h - 4}" font-size="10" fill="#B49C8F">${ws[0].kg}</text>
+      <text x="${w - padR}" y="${h - 4}" font-size="10" fill="#2F9C7C" text-anchor="end">${ws[ws.length - 1].kg} kg</text>
+    </svg>`;
+  }
+
+  function weightSheet(task, onDone) {
+    const cat = activeCat();
+    const lw = weightOf(cat);
+    openSheet(`
+      ${sheetHead('记录体重')}
+      <div class="hint-block" style="margin-bottom:12px">${esc(task ? task.name : '体重')} · ${L.formatDate(new Date())}</div>
+      <div class="field">
+        <label class="label">体重（kg）</label>
+        <input class="input" type="number" step="0.1" min="0" id="weightInput" value="${lw || ''}" placeholder="4.8" inputmode="decimal" />
+      </div>
+      <button class="btn" id="weightSave">保存并完成</button>
+      <button class="btn btn-ghost" style="margin-top:10px" data-act="closeSheet">取消</button>
+    `);
+    $('weightSave').addEventListener('click', () => {
+      const v = parseFloat($('weightInput').value);
+      closeSheet();
+      onDone(Number.isFinite(v) && v > 0 ? Math.round(v * 10) / 10 : null);
+    });
+    setTimeout(() => {
+      const el = $('weightInput');
+      if (el) el.focus();
+    }, 300);
+  }
+
+  function doComplete(id, kg) {
+    const idx = data.tasks.findIndex((t) => t.id === id);
+    if (idx < 0) return;
+    const { task, record } = L.completeTask(data.tasks[idx], new Date());
+    if (kg) record.amount = kg;
+    data.tasks[idx] = task;
+    data.records.push(record);
+    if (kg) {
+      const cat = data.cats.find((c) => c.id === task.catId);
+      if (cat) {
+        cat.weights = cat.weights || [];
+        cat.weights.push({ at: record.at, kg });
+        cat.weight = String(kg);
+      }
+    }
+    save();
+    render();
+    toast(kg ? `已记录 ${kg} kg` : '已完成');
+  }
+
+  /* ---------- 详情：只看计划 + 记录 ---------- */
+  function taskDetailSheet(id) {
+    const t = data.tasks.find((x) => x.id === id);
+    if (!t) return;
+    const isDaily = t.freqKind === 'daily';
+    const need = Math.max(1, t.timesPerDay || 1);
+    const doneToday = L.doneCountOn(t, data.records, new Date());
+    const todayRecs = data.records
+      .filter((r) => r.taskId === t.id && r.status === 'done' && L.sameDay(r.at, new Date()))
+      .sort((a, b) => new Date(a.at) - new Date(b.at));
+    const hist = data.records
+      .filter((r) => r.taskId === t.id)
+      .sort((a, b) => new Date(b.at) - new Date(a.at))
+      .slice(0, 6);
+
+    const row = (k, v) => `<div class="info-row"><span>${k}</span><span>${v}</span></div>`;
+    const planRows = [
+      row('频率', L.scheduleLabel(t)),
+      row('时段', L.slotName(t.slot)),
+      row('上次照料', t.lastDoneAt ? L.formatDate(t.lastDoneAt) : '还没有记录'),
+      isDaily ? row('今日进度', `${doneToday} / ${need} 次`) : row('下次到期', L.dueLabel(t)),
+    ];
+    if (t.appointmentAt) {
+      planRows.push(row('预约', `${L.formatDate(t.appointmentAt)}${t.hospital ? ' · ' + esc(t.hospital) : ''}`));
+    }
+
+    openSheet(`
+      ${sheetHead(esc(t.name))}
+      ${
+        isDaily
+          ? `<div class="today-count">
+              <span class="today-num">${doneToday}<small>/${need}</small></span>
+              <span class="today-label">今天已记录 ${doneToday} 次${doneToday >= need ? '，已完成' : ''}</span>
+            </div>
+             ${
+               todayRecs.length
+                 ? `<div class="time-chips">${todayRecs
+                     .map((r) => `<span class="time-chip">${new Date(r.at).getHours().toString().padStart(2, '0')}:${new Date(r.at).getMinutes().toString().padStart(2, '0')}</span>`)
+                     .join('')}</div>`
+                 : ''
+             }`
+          : ''
+      }
+      <div class="info-card">${planRows.join('')}</div>
+      <div class="btn-row" style="margin-top:16px">
+        <button class="btn" data-act="complete" data-id="${t.id}">${isDaily ? '记录一次' : '完成打卡'}</button>
+        ${
+          isDaily
+            ? ''
+            : `<button class="btn btn-ghost" data-act="skip" data-id="${t.id}">跳过</button>
+               <button class="btn btn-ghost" data-act="snooze" data-id="${t.id}">推迟</button>`
+        }
+      </div>
+      ${
+        hist.length
+          ? `<div class="section-title" style="margin-top:6px">最近记录</div>
+             <div class="hist-list">${hist
+               .map((r) => {
+                 const d = new Date(r.at);
+                 const hh = `${d.getHours()}`.padStart(2, '0');
+                 const mm = `${d.getMinutes()}`.padStart(2, '0');
+                 const amount = r.amount && isWeightTask(t) ? ` · ${r.amount} kg` : '';
+                 return `<div class="hist-row"><span>${d.getMonth() + 1}/${d.getDate()} ${hh}:${mm}${amount}</span><span class="${r.status}">${r.status === 'done' ? '完成' : '跳过'}</span></div>`;
+               })
+               .join('')}</div>`
+          : ''
+      }
+      <div class="hint-block" style="text-align:center;padding-top:14px">要改频率或时段，去「计划」页点这一项</div>
+    `);
+  }
+
+  /* ---------- 编辑：只改计划 ---------- */
   function taskSheet(id) {
     const cat = activeCat();
     const task =
@@ -553,57 +761,44 @@
         appointmentAt: null,
         hospital: '',
         enabled: true,
+        metric: null,
       };
     const isNew = !task.id;
-    const isDaily = task.freqKind !== 'interval';
     const catRows = CAT_KEYS.map(
       (k) =>
         `<option value="${k}" ${task.category === k ? 'selected' : ''}>${CATS[k].name}</option>`
     ).join('');
-    const unitBtn = (u, label) =>
-      `<button type="button" class="${task.unit === u ? 'on' : ''}" data-unit="${u}">${label}</button>`;
-    const timePresets = [1, 2, 3, 4]
-      .map(
-        (n) =>
-          `<button type="button" class="preset ${task.timesPerDay === n ? 'on' : ''}" data-times="${n}">${n} 次</button>`
-      )
-      .join('');
-    const everyPresets = [
-      [1, 'day', '每天'],
-      [2, 'day', '每 2 天'],
-      [3, 'day', '每 3 天'],
-      [1, 'week', '每周'],
-      [2, 'week', '每 2 周'],
-      [1, 'month', '每月'],
-      [3, 'month', '每 3 月'],
-      [1, 'year', '每年'],
+
+    const sel =
+      task.freqKind === 'daily'
+        ? 'daily'
+        : task.every === 1 && task.unit === 'week'
+        ? 'weekly'
+        : task.every === 1 && task.unit === 'month'
+        ? 'monthly'
+        : task.every === 1 && task.unit === 'year'
+        ? 'yearly'
+        : 'custom';
+    const unitOptions = [
+      ['day', '天'],
+      ['week', '周'],
+      ['month', '月'],
+      ['year', '年'],
     ]
-      .map(
-        ([n, u, label]) =>
-          `<button type="button" class="preset ${task.every === n && task.unit === u ? 'on' : ''}" data-every="${n}" data-every-unit="${u}">${label}</button>`
-      )
+      .map(([u, label]) => `<option value="${u}" ${task.unit === u ? 'selected' : ''}>${label}</option>`)
       .join('');
+    const radio = (val, label, tail) => `
+      <label class="freq-row ${sel === val ? 'on' : ''}">
+        <input type="radio" name="freq" value="${val}" ${sel === val ? 'checked' : ''} />
+        <span class="freq-name">${label}</span>
+        ${tail || ''}
+      </label>`;
 
     openSheet(`
-      ${sheetHead(isNew ? '新建照料项' : esc(task.name || '任务'))}
-      ${
-        isNew
-          ? ''
-          : `<div class="btn-row">
-              <button class="btn" data-act="complete" data-id="${task.id}">${isDaily ? '记录一次' : '完成打卡'}</button>
-              ${
-                isDaily
-                  ? ''
-                  : `<button class="btn btn-ghost" data-act="skip" data-id="${task.id}">跳过</button>
-                     <button class="btn btn-ghost" data-act="snooze" data-id="${task.id}">推迟</button>`
-              }
-            </div>`
-      }
+      ${sheetHead(isNew ? '新建照料项' : '编辑计划')}
       <form id="taskForm">
         <input type="hidden" name="taskId" value="${task.id || ''}" />
         <input type="hidden" name="type" value="${task.type}" />
-        <input type="hidden" name="freqKind" value="${isDaily ? 'daily' : 'interval'}" />
-        <input type="hidden" name="unit" value="${task.unit}" />
 
         <div class="field">
           <label class="label">名称</label>
@@ -613,35 +808,16 @@
           <label class="label">分类</label>
           <select class="select" name="category">${catRows}</select>
         </div>
-        <div class="field">
-          <label class="label">类型</label>
-          <div class="seg" id="typeSeg">
-            <button type="button" class="${task.type === 'interval' ? 'on' : ''}" data-seg="interval">周期任务</button>
-            <button type="button" class="${task.type === 'appointment' ? 'on' : ''}" data-seg="appointment">预约任务</button>
-          </div>
-        </div>
 
         <div class="field">
           <label class="label">频率</label>
-          <div class="seg" id="freqSeg">
-            <button type="button" class="${isDaily ? 'on' : ''}" data-freq="daily">每天</button>
-            <button type="button" class="${isDaily ? '' : 'on'}" data-freq="interval">按间隔</button>
+          <div class="freq-list" id="freqList">
+            ${radio('daily', '每天', `<span class="freq-tail"><input class="mini" type="number" name="times" min="1" max="20" value="${task.timesPerDay || 1}" ${sel === 'daily' ? '' : 'disabled'} /> 次</span>`)}
+            ${radio('weekly', '每周')}
+            ${radio('monthly', '每月')}
+            ${radio('yearly', '每年')}
+            ${radio('custom', '自定义', `<span class="freq-tail">每 <input class="mini" type="number" name="every" min="1" max="365" value="${task.every || 1}" ${sel === 'custom' ? '' : 'disabled'} /> <select name="unit" class="mini-select" ${sel === 'custom' ? '' : 'disabled'}>${unitOptions}</select></span>`)}
           </div>
-        </div>
-
-        <div class="field ${isDaily ? '' : 'hidden'}" id="dailyBlock">
-          <label class="label">每天几次</label>
-          <input class="input" type="number" name="times" min="1" max="20" value="${task.timesPerDay || 1}" />
-          <div class="presets">${timePresets}</div>
-        </div>
-
-        <div class="field ${isDaily ? 'hidden' : ''}" id="intervalBlock">
-          <label class="label">间隔</label>
-          <input class="input" type="number" name="every" min="1" max="365" value="${task.every || 1}" />
-          <div class="seg" id="unitSeg" style="margin-top:10px">
-            ${unitBtn('day', '天')}${unitBtn('week', '周')}${unitBtn('month', '月')}${unitBtn('year', '年')}
-          </div>
-          <div class="presets">${everyPresets}</div>
         </div>
 
         <div class="field">
@@ -660,6 +836,14 @@
           <label class="label">上次照料（留空表示还没做过）</label>
           <input class="input" type="datetime-local" name="lastDone" value="${task.lastDoneAt ? toLocalInput(task.lastDoneAt) : ''}" />
           <div class="hint-block" style="padding-top:6px">填了上次时间，会按频率自动算下次；留空则从现在开始算。</div>
+        </div>
+
+        <div class="field">
+          <label class="label">类型</label>
+          <div class="seg" id="typeSeg">
+            <button type="button" class="${task.type === 'interval' ? 'on' : ''}" data-seg="interval">周期任务</button>
+            <button type="button" class="${task.type === 'appointment' ? 'on' : ''}" data-seg="appointment">预约任务</button>
+          </div>
         </div>
 
         <div class="field ${task.type === 'appointment' ? '' : 'hidden'}" id="apptFields">
@@ -688,12 +872,21 @@
 
     const form = $('taskForm');
     const typeHidden = form.querySelector('[name="type"]');
-    const freqHidden = form.querySelector('[name="freqKind"]');
-    const unitHidden = form.querySelector('[name="unit"]');
     const apptFields = $('apptFields');
-    const dailyBlock = $('dailyBlock');
-    const intervalBlock = $('intervalBlock');
+    const freqList = $('freqList');
     const enableHidden = { value: String(task.enabled ? 1 : 0) };
+
+    const syncFreq = () => {
+      const val = freqList.querySelector('input[name="freq"]:checked').value;
+      [...freqList.querySelectorAll('.freq-row')].forEach((row) => {
+        const on = row.querySelector('input[name="freq"]').value === val;
+        row.classList.toggle('on', on);
+        row.querySelectorAll('input:not([name="freq"]), select').forEach((el) => {
+          el.disabled = !on;
+        });
+      });
+    };
+    freqList.addEventListener('change', syncFreq);
 
     $('typeSeg').addEventListener('click', (e) => {
       const b = e.target.closest('[data-seg]');
@@ -702,41 +895,6 @@
       [...$('typeSeg').children].forEach((x) => x.classList.toggle('on', x === b));
       apptFields.classList.toggle('hidden', b.dataset.seg !== 'appointment');
     });
-
-    $('freqSeg').addEventListener('click', (e) => {
-      const b = e.target.closest('[data-freq]');
-      if (!b) return;
-      const daily = b.dataset.freq === 'daily';
-      freqHidden.value = daily ? 'daily' : 'interval';
-      [...$('freqSeg').children].forEach((x) => x.classList.toggle('on', x === b));
-      dailyBlock.classList.toggle('hidden', !daily);
-      intervalBlock.classList.toggle('hidden', daily);
-    });
-
-    $('unitSeg').addEventListener('click', (e) => {
-      const b = e.target.closest('[data-unit]');
-      if (!b) return;
-      unitHidden.value = b.dataset.unit;
-      [...$('unitSeg').children].forEach((x) => x.classList.toggle('on', x === b));
-    });
-
-    form.querySelectorAll('[data-times]').forEach((b) =>
-      b.addEventListener('click', () => {
-        form.querySelector('[name="times"]').value = b.dataset.times;
-        form.querySelectorAll('[data-times]').forEach((x) => x.classList.toggle('on', x === b));
-      })
-    );
-
-    form.querySelectorAll('[data-every]').forEach((b) =>
-      b.addEventListener('click', () => {
-        form.querySelector('[name="every"]').value = b.dataset.every;
-        unitHidden.value = b.dataset.everyUnit;
-        [...$('unitSeg').children].forEach((x) =>
-          x.classList.toggle('on', x.dataset.unit === b.dataset.everyUnit)
-        );
-        form.querySelectorAll('[data-every]').forEach((x) => x.classList.toggle('on', x === b));
-      })
-    );
 
     $('slotSeg').addEventListener('click', (e) => {
       const b = e.target.closest('[data-slot]');
@@ -760,10 +918,28 @@
       const name = String(fd.get('name') || '').trim();
       if (!name) return toast('给任务起个名字');
 
-      const freqKind = freqHidden.value;
-      const unit = unitHidden.value || 'day';
-      const timesPerDay = Math.max(1, Math.min(20, parseInt(fd.get('times'), 10) || 1));
-      const every = Math.max(1, Math.min(365, parseInt(fd.get('every'), 10) || 1));
+      const freq = fd.get('freq');
+      let freqKind = 'interval';
+      let timesPerDay = 1;
+      let every = 1;
+      let unit = 'day';
+      if (freq === 'daily') {
+        freqKind = 'daily';
+        timesPerDay = Math.max(1, Math.min(20, parseInt(fd.get('times'), 10) || 1));
+      } else if (freq === 'weekly') {
+        every = 1;
+        unit = 'week';
+      } else if (freq === 'monthly') {
+        every = 1;
+        unit = 'month';
+      } else if (freq === 'yearly') {
+        every = 1;
+        unit = 'year';
+      } else {
+        every = Math.max(1, Math.min(365, parseInt(fd.get('every'), 10) || 1));
+        unit = fd.get('unit') || 'day';
+      }
+
       const slotBtn = $('slotSeg').querySelector('.on');
       const slot = slotBtn ? slotBtn.dataset.slot : 'any';
       const lastRaw = fd.get('lastDone');
@@ -787,6 +963,7 @@
           type === 'appointment' && appointmentAt ? appointmentAt.toISOString() : null,
         hospital: String(fd.get('hospital') || '').trim(),
         enabled: enableHidden.value === '1',
+        metric: name === '称体重' || (fd.get('category') === 'monitor' && /体重/.test(name)) ? 'weight' : null,
       };
 
       if (freqKind === 'daily') {
@@ -879,14 +1056,13 @@
 
   /* ---------------- 动作 ---------------- */
   function complete(id) {
-    const idx = data.tasks.findIndex((t) => t.id === id);
-    if (idx < 0) return;
-    const { task, record } = L.completeTask(data.tasks[idx], new Date());
-    data.tasks[idx] = task;
-    data.records.push(record);
-    save();
-    render();
-    toast('已完成');
+    const t = data.tasks.find((x) => x.id === id);
+    if (!t) return;
+    if (isWeightTask(t)) {
+      weightSheet(t, (kg) => doComplete(id, kg));
+      return;
+    }
+    doComplete(id, null);
   }
 
   function skip(id) {
@@ -1047,7 +1223,8 @@
       closeSheet();
       return snooze(id);
     }
-    if (act === 'openTask') return taskSheet(id);
+    if (act === 'taskDetail') return taskDetailSheet(id);
+    if (act === 'taskEdit') return taskSheet(id);
     if (act === 'addTask') return templateSheet();
     if (act === 'addTemplate') return addTemplate(el.dataset.name);
     if (act === 'deleteTask') {
@@ -1072,6 +1249,19 @@
     }
     if (act === 'backup') return exportBackup();
     if (act === 'import') return $('importFile').click();
+    if (act === 'logWeight') {
+      weightSheet(null, (kg) => {
+        if (!kg) return;
+        const cat = activeCat();
+        cat.weights = cat.weights || [];
+        cat.weights.push({ at: new Date().toISOString(), kg });
+        cat.weight = String(kg);
+        save();
+        render();
+        toast(`已记录 ${kg} kg`);
+      });
+      return;
+    }
     if (act === 'about') return aboutSheet();
     if (act === 'closeSheet') return closeSheet();
   });
@@ -1195,7 +1385,23 @@
     ];
     return {
       version: 1,
-      cats: [{ id: catId, name: '年糕', breed: '英短', birthday: '2024-05-01', weight: '4.8' }],
+      cats: [
+        {
+          id: catId,
+          name: '年糕',
+          breed: '英短',
+          birthday: '2024-05-01',
+          weight: '4.8',
+          weights: [
+            { at: at(-150, 10, 0), kg: 4.4 },
+            { at: at(-120, 10, 0), kg: 4.5 },
+            { at: at(-90, 10, 0), kg: 4.6 },
+            { at: at(-60, 10, 0), kg: 4.9 },
+            { at: at(-30, 10, 0), kg: 4.9 },
+            { at: at(-2, 10, 0), kg: 4.8 },
+          ],
+        },
+      ],
       activeCat: catId,
       tasks,
       records,
@@ -1215,6 +1421,7 @@
   if (!data.activeCat && data.cats.length) data.activeCat = data.cats[0].id;
   render();
   if (needsSave) save();
+
 
 
 

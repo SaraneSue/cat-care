@@ -1,4 +1,4 @@
-const CACHE = 'catcare-v3';
+const CACHE = 'catcare-v4';
 const ASSETS = [
   './',
   './index.html',
