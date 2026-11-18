@@ -112,7 +112,8 @@
   function defaultData() {
     return {
       version: 1,
-      family: { id: 'fam', name: '我的家' },
+      families: [{ id: 'fam', name: '我的家' }],
+      activeFamily: 'fam',
       cats: [],
       activeCat: null,
       tasks: [],
@@ -130,24 +131,46 @@
       d.tasks = d.tasks || [];
       d.records = d.records || [];
       d.settings = d.settings || { backupAt: null };
-      if (!d.family || !d.family.name) {
-        d.family = { id: 'fam', name: '我的家' };
+      if (!Array.isArray(d.families) || !d.families.length) {
+        const fid = (d.family && d.family.id) || 'fam';
+        const fname = (d.family && d.family.name) || '我的家';
+        d.families = [{ id: fid, name: fname }];
+        needsSave = true;
+      }
+      delete d.family;
+      if (!d.activeFamily || !d.families.some((f) => f.id === d.activeFamily)) {
+        d.activeFamily = d.families[0].id;
         needsSave = true;
       }
       if (d.cats.some((c) => !c.familyId)) {
-        d.cats = d.cats.map((c) => ({ ...c, familyId: d.family.id }));
+        d.cats = d.cats.map((c) => ({ ...c, familyId: c.familyId || d.activeFamily }));
         needsSave = true;
       }
-      if (d.tasks.some((t) => !t.scope)) {
+      if (d.tasks.some((t) => !t.scope || (t.scope === 'family' && !t.familyId))) {
         d.tasks = d.tasks.map((t) => {
           const shared = ['food', 'litter', 'env'].includes(t.category);
-          return { ...t, scope: shared ? 'family' : 'cat', catId: shared ? null : t.catId };
+          const scope = t.scope || (shared ? 'family' : 'cat');
+          const cat = d.cats.find((c) => c.id === t.catId);
+          return {
+            ...t,
+            scope,
+            catId: scope === 'family' ? null : t.catId,
+            familyId:
+              scope === 'family' ? t.familyId || d.activeFamily : (cat ? cat.familyId : d.activeFamily),
+          };
         });
         needsSave = true;
       }
-      if (d.tasks.some((t) => !t.freqKind)) {
+      if (d.records.some((r) => !r.familyId)) {
+        d.records = d.records.map((r) => {
+          const t = d.tasks.find((x) => x.id === r.taskId);
+          const c = d.cats.find((x) => x.id === r.catId);
+          return {
+            ...r,
+            familyId: r.familyId || (t && t.familyId) || (c && c.familyId) || d.activeFamily,
+          };
+        });
         needsSave = true;
-        d.tasks = d.tasks.map(L.migrateTask);
       }
       if (d.tasks.some((t) => t.metric === undefined)) {
         needsSave = true;
@@ -185,7 +208,18 @@
     return data.tasks.filter((t) => t.catId === cat.id);
   }
 
-  const familyName = () => (data.family && data.family.name) || '我的家';
+  const activeFamily = () =>
+    data.families.find((f) => f.id === data.activeFamily) || data.families[0];
+  const familyName = () => (activeFamily() || {}).name || '我的家';
+  const familyId = () => (activeFamily() || {}).id;
+  const familyCats = () => data.cats.filter((c) => c.familyId === familyId());
+
+  function currentTasks() {
+    const ids = new Set(familyCats().map((c) => c.id));
+    return data.tasks.filter((t) =>
+      t.scope === 'family' ? t.familyId === familyId() : ids.has(t.catId)
+    );
+  }
 
   function scopeLabel(t) {
     if (t.scope === 'family') return '全家';
@@ -194,7 +228,7 @@
   }
 
   function visiblePlanTasks() {
-    let list = data.tasks;
+    let list = currentTasks();
     if (planScope === 'family') list = list.filter((t) => t.scope === 'family');
     else if (planScope !== 'all')
       list = list.filter((t) => t.scope === 'cat' && t.catId === planScope);
@@ -230,10 +264,10 @@
   function renderTop() {
     const top = $('topbar');
     top.innerHTML = `
-      <button class="cat-switch" data-act="familySheet">
+      <button class="cat-switch" data-act="familyMenuSheet">
         <span class="avatar">${icon('home')}</span>
         <span class="cat-name">${esc(familyName())}</span>
-        <span class="top-count">${data.cats.length} 只猫</span>
+        <span class="top-count">${familyCats().length} 只猫</span>
         ${icon('chev', 'chev')}
       </button>
       <span class="spacer"></span>
@@ -311,7 +345,7 @@
     const bySlot = (a, b) =>
       slotRank(a) - slotRank(b) || new Date(a.nextDueAt) - new Date(b.nextDueAt);
 
-    const enabled = data.tasks.filter((t) => t.enabled);
+    const enabled = currentTasks().filter((t) => t.enabled);
     const overdue = enabled
       .filter((t) => stateOf(t) === 'overdue')
       .sort((a, b) => new Date(a.nextDueAt) - new Date(b.nextDueAt));
@@ -321,7 +355,7 @@
     const familyToday = enabled
       .filter((t) => t.scope === 'family' && stateOf(t) === 'today')
       .sort(bySlot);
-    const perCat = data.cats.map((cat) => ({
+    const perCat = familyCats().map((cat) => ({
       cat,
       list: enabled
         .filter((t) => t.scope === 'cat' && t.catId === cat.id && stateOf(t) === 'today')
@@ -333,11 +367,13 @@
     const dateStr = `${now.getMonth() + 1} 月 ${now.getDate()} 日`;
 
     if (!total) {
+      const noCats = familyCats().length === 0;
       return `
         <div class="empty">
           ${icon('cat')}
-          <div class="empty-title">今天没有要做的</div>
-          <div class="empty-sub">去「计划」里加几项，或者明天再来看看</div>
+          <div class="empty-title">${noCats ? '这个家庭还没有猫咪' : '今天没有要做的'}</div>
+          <div class="empty-sub">${noCats ? '先添加一只猫，再给它安排照料计划' : '去「计划」里加几项，或者明天再来看看'}</div>
+          ${noCats ? '<button class="btn" data-act="addCat" style="max-width:200px;margin-top:16px">添加猫咪</button>' : ''}
         </div>`;
     }
 
@@ -367,7 +403,7 @@
       <div class="hero">
         <div class="hero-top"><span>今天</span><span>${dateStr}</span></div>
         <div class="hero-count">${done.length} <small>/ ${total}</small></div>
-        <div class="hero-sub">${esc(familyName())} · ${data.cats.length} 只猫 · 已完成 ${done.length} 件</div>
+        <div class="hero-sub">${esc(familyName())} · ${familyCats().length} 只猫 · 已完成 ${done.length} 件</div>
         <div class="bar"><i style="width:${pct}%"></i></div>
         <span class="hero-cat">${icon('cat')}</span>
       </div>
@@ -404,7 +440,7 @@
       env: '环境',
     };
     const scopes = [['all', '全部'], ['family', '全家']].concat(
-      data.cats.map((c) => [c.id, c.name])
+      familyCats().map((c) => [c.id, c.name])
     );
     if (!scopes.some(([k]) => k === planScope)) planScope = 'all';
 
@@ -426,7 +462,7 @@
     if (planScope === 'all') {
       const fam = visible.filter((t) => t.scope === 'family');
       if (fam.length) sections.push({ title: '全家', list: fam });
-      data.cats.forEach((c) => {
+      familyCats().forEach((c) => {
         const list = visible.filter((t) => t.scope === 'cat' && t.catId === c.id);
         if (list.length) sections.push({ title: c.name, list });
       });
@@ -500,6 +536,7 @@
   /* ---------------- 渲染：记录 ---------------- */
   function recordsHTML() {
     const recs = data.records
+      .filter((r) => r.familyId === familyId())
       .slice()
       .sort((a, b) => new Date(b.at) - new Date(a.at))
       .slice(0, 80);
@@ -556,7 +593,7 @@
       ? `${L.formatDay(data.settings.backupAt)}备份`
       : '还没备份过';
 
-    const catRows = data.cats
+    const catRows = familyCats()
       .map((c) => {
         const w = weightOf(c);
         const sub = [c.breed, w ? `${w} kg` : '未记录体重'].filter(Boolean).join(' · ');
@@ -572,11 +609,11 @@
       .join('');
 
     return `
-      <div class="me-card" data-act="familySheet">
+      <div class="me-card" data-act="familyMenuSheet">
         <span class="avatar">${icon('home')}</span>
         <div class="grow">
           <div class="me-name">${esc(familyName())}</div>
-          <div class="me-sub">${data.cats.length} 只猫</div>
+          <div class="me-sub">${familyCats().length} 只猫</div>
         </div>
         ${icon('chev', 'chev')}
       </div>
@@ -603,8 +640,54 @@
     `;
   }
 
+  function familyMenuSheet() {
+    const rows = data.families
+      .map(
+        (f) => `<button class="list-row" data-act="switchFamily" data-id="${f.id}">
+          <span class="grow">${esc(f.name)}</span>
+          ${f.id === data.activeFamily ? '<span class="hint">当前</span>' : ''}
+          ${icon('chev')}
+        </button>`
+      )
+      .join('');
+    openSheet(`
+      ${sheetHead('家庭')}
+      ${rows}
+      <button class="list-row" data-act="addFamily"><span class="grow">添加家庭</span>${icon('plus')}</button>
+      <button class="list-row" data-act="manageFamily"><span class="grow">管理「${esc(familyName())}」</span>${icon('chev')}</button>
+    `);
+  }
+
+  function addFamilySheet() {
+    openSheet(`
+      ${sheetHead('添加家庭')}
+      <div class="field">
+        <label class="label">家庭名称</label>
+        <input class="input" id="newFamilyName" placeholder="比如：爸妈家" />
+      </div>
+      <button class="btn" id="createFamily">创建</button>
+    `);
+    $('createFamily').addEventListener('click', () => {
+      const name = $('newFamilyName').value.trim();
+      if (!name) return toast('给家庭起个名字');
+      const id = L.uid();
+      data.families.push({ id, name });
+      data.activeFamily = id;
+      planScope = 'all';
+      planManage = false;
+      selectedTasks.clear();
+      save();
+      closeSheet();
+      render();
+      toast('已添加家庭');
+      setTimeout(() => {
+        if (!data.cats.some((c) => c.familyId === id)) catSheet(null);
+      }, 320);
+    });
+  }
+
   function familySheet() {
-    const cats = data.cats
+    const cats = familyCats()
       .map(
         (c) => `<button class="list-row" data-act="editCat" data-id="${c.id}">
           <span class="grow">${esc(c.name)}</span>${icon('chev')}
@@ -612,20 +695,20 @@
       )
       .join('');
     openSheet(`
-      ${sheetHead('家庭')}
+      ${sheetHead('管理家庭')}
       <div class="field">
         <label class="label">家庭名称</label>
         <input class="input" id="familyInput" value="${esc(familyName())}" />
       </div>
       <button class="btn" id="saveFamily">保存名称</button>
       <div class="section-title">猫咪</div>
-      ${cats || '<div class="hint-block">还没有猫咪</div>'}
+      ${cats || '<div class="hint-block">这个家庭还没有猫咪</div>'}
       <button class="list-row" data-act="addCat"><span class="grow">添加猫咪</span>${icon('plus')}</button>
     `);
     $('saveFamily').addEventListener('click', () => {
       const v = $('familyInput').value.trim();
       if (!v) return toast('给家庭起个名字');
-      data.family.name = v;
+      activeFamily().name = v;
       save();
       closeSheet();
       render();
@@ -671,24 +754,6 @@
 
   function sheetHead(title) {
     return `<div class="sheet-head"><div class="sheet-title">${title}</div><button class="sheet-close" data-act="closeSheet">×</button></div>`;
-  }
-
-  function catMenuSheet() {
-    const rows = data.cats
-      .map(
-        (c) => `
-      <button class="list-row" data-act="switchCat" data-id="${c.id}">
-        <span class="grow">${esc(c.name)}</span>
-        ${c.id === data.activeCat ? '<span class="hint">当前</span>' : ''}
-        ${icon('chev')}
-      </button>`
-      )
-      .join('');
-    openSheet(`
-      ${sheetHead('切换猫咪')}
-      ${rows}
-      <button class="list-row" data-act="addCat"><span class="grow">添加猫咪</span>${icon('plus')}</button>
-    `);
   }
 
   function catSheet(id) {
@@ -815,6 +880,10 @@
     if (idx < 0) return;
     const { task, record } = L.completeTask(data.tasks[idx], new Date());
     if (kg) record.amount = kg;
+    record.familyId =
+      task.familyId ||
+      (task.catId && (data.cats.find((c) => c.id === task.catId) || {}).familyId) ||
+      familyId();
     data.tasks[idx] = task;
     data.records.push(record);
     if (kg) {
@@ -904,7 +973,7 @@
 
   /* ---------- 编辑：只改计划 ---------- */
   function taskSheet(id) {
-    const cat = activeCat() || data.cats[0] || { id: null };
+    const cat = familyCats()[0] || activeCat() || data.cats[0] || { id: null };
     const task =
       data.tasks.find((t) => t.id === id) || {
         id: null,
@@ -933,8 +1002,8 @@
       ? task.scope === 'family'
         ? 'family'
         : task.catId
-      : data.cats[0]
-      ? data.cats[0].id
+      : familyCats()[0]
+      ? familyCats()[0].id
       : 'family';
 
     const sel =
@@ -981,7 +1050,7 @@
           <label class="label">归属</label>
           <div class="seg" id="scopeSeg">
             <button type="button" class="${scopeOf === 'family' ? 'on' : ''}" data-scope="family">全家</button>
-            ${data.cats
+            ${familyCats()
               .map(
                 (c) =>
                   `<button type="button" class="${scopeOf === c.id ? 'on' : ''}" data-scope="${c.id}">${esc(c.name)}</button>`
@@ -1162,6 +1231,10 @@
         metric,
         scope: scopeVal === 'family' ? 'family' : 'cat',
         catId: scopeVal === 'family' ? null : scopeVal,
+        familyId:
+          scopeVal === 'family'
+            ? familyId()
+            : (data.cats.find((c) => c.id === scopeVal) || {}).familyId || familyId(),
       };
 
       if (freqKind === 'daily') {
@@ -1194,7 +1267,7 @@
 
   function templateSheet() {
     const existing = new Set(data.tasks.map((t) => t.name));
-    const scopes = [['family', '全家']].concat(data.cats.map((c) => [c.id, c.name]));
+    const scopes = [['family', '全家']].concat(familyCats().map((c) => [c.id, c.name]));
     if (!scopes.some(([k]) => k === tplScope)) tplScope = 'family';
     const scopeChips = scopes
       .map(
@@ -1205,7 +1278,7 @@
     const targetName =
       tplScope === 'family'
         ? '全家'
-        : (data.cats.find((c) => c.id === tplScope) || {}).name || '全家';
+        : (familyCats().find((c) => c.id === tplScope) || {}).name || '全家';
 
     const rows = CAT_KEYS.map((k) => {
       const list = TEMPLATES.filter((t) => t.category === k);
@@ -1277,7 +1350,13 @@
     if (idx < 0) return;
     const { task, record } = L.skipTask(data.tasks[idx], new Date());
     data.tasks[idx] = task;
-    if (record) data.records.push(record);
+    if (record) {
+      record.familyId =
+        task.familyId ||
+        (task.catId && (data.cats.find((c) => c.id === task.catId) || {}).familyId) ||
+        familyId();
+      data.records.push(record);
+    }
     save();
     render();
     toast('已跳过，重新计时');
@@ -1299,18 +1378,22 @@
     const catSpecific = ['groom', 'medical', 'monitor'].includes(tpl.category);
     let target = tplScope;
     if (target === 'family' && catSpecific) {
-      if (data.cats.length === 1) target = data.cats[0].id;
+      if (familyCats().length === 1) target = familyCats()[0].id;
       else {
         toast('先在顶部选择要加到哪只猫');
         return;
       }
     }
-    if (target !== 'family' && !data.cats.some((c) => c.id === target)) target = 'family';
+    if (target !== 'family' && !familyCats().some((c) => c.id === target)) target = 'family';
     const now = new Date();
     data.tasks.push({
       id: L.uid(),
       catId: target === 'family' ? null : target,
       scope: target === 'family' ? 'family' : 'cat',
+      familyId:
+        target === 'family'
+          ? familyId()
+          : (familyCats().find((c) => c.id === target) || {}).familyId || familyId(),
       name: tpl.name,
       category: tpl.category,
       type: tpl.type,
@@ -1334,7 +1417,7 @@
     const where =
       target === 'family'
         ? '全家'
-        : (data.cats.find((c) => c.id === target) || {}).name || '全家';
+        : (familyCats().find((c) => c.id === target) || {}).name || '全家';
     toast('已添加 ' + tpl.name + ' · ' + where);
   }
 
@@ -1386,17 +1469,49 @@
             records: d.records || [],
             settings: d.settings || { backupAt: null },
           };
-          if (!data.family || !data.family.name) data.family = { id: 'fam', name: '我的家' };
+          if (!Array.isArray(data.families) || !data.families.length) {
+            const f = data.family || {};
+            data.families = [{ id: f.id || 'fam', name: f.name || '我的家' }];
+          }
+          delete data.family;
+          if (!data.activeFamily || !data.families.some((f) => f.id === data.activeFamily)) {
+            data.activeFamily = data.families[0].id;
+          }
           data.cats = (data.cats || []).map((c) => ({
             ...c,
-            familyId: c.familyId || data.family.id,
+            familyId: c.familyId || data.activeFamily,
             weights: Array.isArray(c.weights) ? c.weights : [],
           }));
-          data.tasks = (data.tasks || []).map((t) => ({
-            ...t,
-            scope: t.scope || 'cat',
-            metric: t.metric !== undefined ? t.metric : t.category === 'monitor' && /体重/.test(t.name) ? 'weight' : null,
-          }));
+          data.tasks = (data.tasks || []).map((t) => {
+            const shared = ['food', 'litter', 'env'].includes(t.category);
+            const scope = t.scope || (shared ? 'family' : 'cat');
+            const cat = data.cats.find((c) => c.id === t.catId);
+            return {
+              ...t,
+              scope,
+              catId: scope === 'family' ? null : t.catId,
+              familyId:
+                scope === 'family'
+                  ? t.familyId || data.activeFamily
+                  : cat
+                  ? cat.familyId
+                  : data.activeFamily,
+              metric:
+                t.metric !== undefined
+                  ? t.metric
+                  : t.category === 'monitor' && /体重/.test(t.name)
+                  ? 'weight'
+                  : null,
+            };
+          });
+          data.records = (data.records || []).map((r) => {
+            const t = data.tasks.find((x) => x.id === r.taskId);
+            const c = data.cats.find((x) => x.id === r.catId);
+            return {
+              ...r,
+              familyId: r.familyId || (t && t.familyId) || (c && c.familyId) || data.activeFamily,
+            };
+          });
           if (!data.cats.length) data = defaultData();
           save();
           render();
@@ -1424,7 +1539,19 @@
       $('view').scrollTop = 0;
       return;
     }
-    if (act === 'familySheet') return familySheet();
+    if (act === 'familyMenuSheet') return familyMenuSheet();
+    if (act === 'manageFamily') return familySheet();
+    if (act === 'addFamily') return addFamilySheet();
+    if (act === 'switchFamily') {
+      data.activeFamily = id;
+      planScope = 'all';
+      planManage = false;
+      selectedTasks.clear();
+      save();
+      closeSheet();
+      render();
+      return;
+    }
     if (act === 'logWeightCat') {
       const cid = id;
       weightSheet(
@@ -1583,7 +1710,7 @@
         breed: '',
         birthday: '',
         weight: '',
-        familyId: data.family.id,
+        familyId: familyId(),
         weights: [],
       });
       data.activeCat = id;
@@ -1609,7 +1736,7 @@
         Object.assign(c, payload);
       } else {
         const id = L.uid();
-        data.cats.push({ id, familyId: data.family.id, weights: [], ...payload });
+        data.cats.push({ id, familyId: familyId(), weights: [], ...payload });
         if (!data.activeCat) data.activeCat = id;
       }
       save();
@@ -1643,6 +1770,7 @@
           id: 't_' + name,
           catId: scope === 'family' ? null : catId || catA,
           scope,
+          familyId: famId,
           name,
           category,
           type: 'interval',
@@ -1689,15 +1817,16 @@
       mk('猫窝清洗', 'env', { n: 3, u: 'week' }, 'any', 'family'),
     ];
     const records = [
-      { id: 'r1', taskId: 't_加猫粮', catId: null, at: at(0, 8, 10), status: 'done', name: '加猫粮' },
-      { id: 'r2', taskId: 't_换水', catId: null, at: at(0, 8, 12), status: 'done', name: '换水' },
-      { id: 'r3', taskId: 't_铲猫砂', catId: null, at: at(-1, 21, 0), status: 'done', name: '铲猫砂' },
-      { id: 'r4', taskId: 't_刷牙', catId: catA, at: at(-1, 21, 5), status: 'done', name: '刷牙' },
-      { id: 'r5', taskId: 't_陪玩', catId: null, at: at(-1, 20, 30), status: 'skipped', name: '陪玩' },
+      { id: 'r1', taskId: 't_加猫粮', catId: null, familyId: famId, at: at(0, 8, 10), status: 'done', name: '加猫粮' },
+      { id: 'r2', taskId: 't_换水', catId: null, familyId: famId, at: at(0, 8, 12), status: 'done', name: '换水' },
+      { id: 'r3', taskId: 't_铲猫砂', catId: null, familyId: famId, at: at(-1, 21, 0), status: 'done', name: '铲猫砂' },
+      { id: 'r4', taskId: 't_刷牙', catId: catA, familyId: famId, at: at(-1, 21, 5), status: 'done', name: '刷牙' },
+      { id: 'r5', taskId: 't_陪玩', catId: null, familyId: famId, at: at(-1, 20, 30), status: 'skipped', name: '陪玩' },
     ];
     return {
       version: 1,
-      family: { id: famId, name: '我的家' },
+      families: [{ id: famId, name: '我的家' }],
+      activeFamily: famId,
       cats: [
         {
           id: catA,
@@ -1748,6 +1877,7 @@
   if (!data.activeCat && data.cats.length) data.activeCat = data.cats[0].id;
   render();
   if (needsSave) save();
+
 
 
 
