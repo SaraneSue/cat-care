@@ -264,12 +264,7 @@
   function renderTop() {
     const top = $('topbar');
     top.innerHTML = `
-      <button class="cat-switch" data-act="familyMenuSheet">
-        <span class="avatar">${icon('home')}</span>
-        <span class="cat-name">${esc(familyName())}</span>
-        <span class="top-count">${familyCats().length} 只猫</span>
-        ${icon('chev', 'chev')}
-      </button>
+      <div class="brand">${icon('cat')}<span>猫咪照料</span></div>
       <span class="spacer"></span>
       <button class="icon-btn" data-act="backup" aria-label="备份">${icon('down')}</button>
     `;
@@ -603,6 +598,7 @@
             <span class="row-name">${esc(c.name)}</span>
             <span class="row-sub">${esc(sub)}</span>
           </span>
+          ${miniWeightChart(c)}
           ${icon('chev')}
         </button>`;
       })
@@ -778,14 +774,21 @@
           <input class="input" type="number" step="0.1" min="0" name="weight" value="${cat && cat.weight ? cat.weight : ''}" placeholder="4.8" />
         </div>
         ${
-          cat && (cat.weights || []).length >= 2
+          cat
             ? `<div class="field">
                 <label class="label">体重变化</label>
-                <div class="wchart-box">${weightChart(cat)}</div>
+                ${
+                  (cat.weights || []).length >= 2
+                    ? `<div class="wchart-box">${weightChart(cat)}</div>`
+                    : `<div class="hint-block">${
+                        (cat.weights || []).length
+                          ? '再填写一次体重并保存，就能看到变化曲线。'
+                          : '填写体重并保存后，这里会记录每次变化。'
+                      }</div>`
+                }
               </div>`
             : ''
         }
-        ${cat ? `<button type="button" class="btn btn-ghost" data-act="logWeightCat" data-id="${cat.id}" style="margin-bottom:12px">记录体重</button>` : ''}
         ${cat ? `<input type="hidden" name="catId" value="${cat.id}" />` : ''}
         <button class="btn" type="submit">保存</button>
         ${cat ? `<button class="btn btn-danger" type="button" data-act="deleteCat" data-id="${cat.id}">删除这只猫</button>` : ''}
@@ -849,6 +852,33 @@
       <text x="${pts[0][0]}" y="${h - 4}" font-size="10" fill="#B49C8F">${ws[0].kg}</text>
       <text x="${w - padR}" y="${h - 4}" font-size="10" fill="#2F9C7C" text-anchor="end">${ws[ws.length - 1].kg} kg</text>
     </svg>`;
+  }
+
+  function miniWeightChart(cat) {
+    const ws = ((cat.weights || [])
+      .slice()
+      .sort((a, b) => new Date(a.at) - new Date(b.at))
+      .slice(-12));
+    if (ws.length < 2) return '';
+    const vals = ws.map((x) => x.kg);
+    let min = Math.min(...vals);
+    let max = Math.max(...vals);
+    if (max - min < 0.2) {
+      min -= 0.1;
+      max += 0.1;
+    }
+    const w = 100;
+    const h = 36;
+    const pad = 4;
+    const pts = ws.map((x, i) => {
+      const px = pad + (i * (w - pad * 2)) / (ws.length - 1);
+      const py = h - pad - ((x.kg - min) / (max - min)) * (h - pad * 2);
+      return [Math.round(px * 10) / 10, Math.round(py * 10) / 10];
+    });
+    const last = pts[pts.length - 1];
+    return `<svg class="minichart" viewBox="0 0 ${w} ${h}" aria-hidden="true"><polyline points="${pts
+      .map((pt) => pt.join(','))
+      .join(' ')}" fill="none" stroke="#2F9C7C" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${last[0]}" cy="${last[1]}" r="2.8" fill="#2F9C7C"/></svg>`;
   }
 
   function weightSheet(task, onDone, catId) {
@@ -1266,7 +1296,11 @@
   }
 
   function templateSheet() {
-    const existing = new Set(data.tasks.map((t) => t.name));
+    const scopedTasks =
+      tplScope === 'family'
+        ? data.tasks.filter((t) => t.scope === 'family' && t.familyId === familyId())
+        : data.tasks.filter((t) => t.scope === 'cat' && t.catId === tplScope);
+    const existing = new Set(scopedTasks.map((t) => t.name));
     const scopes = [['family', '全家']].concat(familyCats().map((c) => [c.id, c.name]));
     if (!scopes.some(([k]) => k === tplScope)) tplScope = 'family';
     const scopeChips = scopes
@@ -1302,7 +1336,7 @@
     openSheet(`
       ${sheetHead('选择照料项')}
       <div class="chips">${scopeChips}</div>
-      <div class="hint-block" style="margin-bottom:8px">加到「${esc(targetName)}」；清洁/医疗类需要先选一只猫</div>
+      <div class="hint-block" style="margin-bottom:8px">加到「${esc(targetName)}」，点一项即加入</div>
       ${rows}
       <button class="btn" data-act="closeSheet" style="margin-top:14px">完成</button>
     `);
@@ -1375,14 +1409,10 @@
   function addTemplate(name) {
     const tpl = TEMPLATES.find((t) => t.name === name);
     if (!tpl) return;
-    const catSpecific = ['groom', 'medical', 'monitor'].includes(tpl.category);
     let target = tplScope;
-    if (target === 'family' && catSpecific) {
-      if (familyCats().length === 1) target = familyCats()[0].id;
-      else {
-        toast('先在顶部选择要加到哪只猫');
-        return;
-      }
+    if (target === 'family' && tpl.metric === 'weight') {
+      toast('称体重需要指定一只猫');
+      return;
     }
     if (target !== 'family' && !familyCats().some((c) => c.id === target)) target = 'family';
     const now = new Date();
@@ -1414,6 +1444,7 @@
     });
     save();
     render();
+    templateSheet();
     const where =
       target === 'family'
         ? '全家'
@@ -1731,12 +1762,25 @@
         weight: String(fd.get('weight') || ''),
       };
       const cid = fd.get('catId');
+      const w = parseFloat(payload.weight);
+      const validW = Number.isFinite(w) && w > 0;
+      const at = new Date().toISOString();
       if (cid) {
         const c = data.cats.find((x) => x.id === cid);
+        const changed = validW && Number(c.weight) !== w;
         Object.assign(c, payload);
+        if (changed) {
+          c.weights = c.weights || [];
+          c.weights.push({ at, kg: w });
+        }
       } else {
         const id = L.uid();
-        data.cats.push({ id, familyId: familyId(), weights: [], ...payload });
+        data.cats.push({
+          id,
+          familyId: familyId(),
+          weights: validW ? [{ at, kg: w }] : [],
+          ...payload,
+        });
         if (!data.activeCat) data.activeCat = id;
       }
       save();
@@ -1877,6 +1921,7 @@
   if (!data.activeCat && data.cats.length) data.activeCat = data.cats[0].id;
   render();
   if (needsSave) save();
+
 
 
 
