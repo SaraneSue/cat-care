@@ -266,7 +266,7 @@
     const top = $('topbar');
     if (tab === 'me') {
       top.innerHTML = `
-        <div class="brand">${icon('cat')}<span>猫咪照料</span></div>
+        <div class="brand">${icon('cat')}<span>今天照顾咪了吗</span></div>
         <span class="spacer"></span>
         <button class="icon-btn" data-act="backup" aria-label="备份">${icon('down')}</button>
       `;
@@ -1372,7 +1372,7 @@
     openSheet(`
       ${sheetHead('关于')}
       <div class="hint-block">
-        <p>这是一个只给自己用的猫咪照料清单。数据保存在本机浏览器里，不会上传到任何服务器。</p>
+        <p>「今天照顾咪了吗」是一个只给自己用的家庭猫咪照料清单。数据保存在本机浏览器里，不会上传到任何服务器。</p>
         <p>护理频率是常见兽医建议的默认值，个体差异很大，请以执业兽医的建议为准。本工具只做记录与提醒清单，不提供任何诊断或用药建议。</p>
         <p>建议每两周导出一次备份，换手机或清理浏览器数据前务必先导出。</p>
         <p>v1.0 · <a href="https://github.com" target="_blank" rel="noopener">GitHub Pages</a></p>
@@ -1954,6 +1954,7 @@
   if (!data.activeCat && data.cats.length) data.activeCat = data.cats[0].id;
   render();
   if (needsSave) save();
+
 
 
 

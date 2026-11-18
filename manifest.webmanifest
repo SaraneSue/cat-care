@@ -1,7 +1,7 @@
 {
-  "name": "猫咪照料",
-  "short_name": "猫咪照料",
-  "description": "只给自己用的猫咪照料清单",
+  "name": "今天照顾咪了吗",
+  "short_name": "今天照顾咪了吗",
+  "description": "今天照顾咪了吗 · 家庭猫咪照料清单",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
@@ -10,7 +10,17 @@
   "theme_color": "#FFFAE8",
   "lang": "zh-CN",
   "icons": [
-    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
   ]
 }
